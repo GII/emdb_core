@@ -45,7 +45,7 @@ This repository is dedicated to store the execution middleware (commander node +
 
 - _core_. Implementation for the commander node, the execution node, the long-term memory, and the base implementation for all the cognitive nodes. 
 - _core_interfaces_. Needed services and messages definitions.
-- _dummny_nodes_. Minimum implementation for each cognitive node. The idea is to have cognitive nodes as barebones as possible to run experiments where we only want to focus on an specific cognitive node variation / algorithm. In these cases, we want to reduce the remaining part of the cognitive architecture to a minimum functional set of elements, to avoid interferences when studying a specific change in a given cognitive node.
+- _dummny_nodes_. Minimum implementation for each cognitive node. The idea is to have cognitive nodes as barebones as possible to run experiments where we only want to focus on a specific cognitive node variation / algorithm. In these cases, we want to reduce the remaining part of the cognitive architecture to a minimum functional set of elements, to avoid interferences when studying a specific change in a given cognitive node.
 
 ## Installation
 
