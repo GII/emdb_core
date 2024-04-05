@@ -16,9 +16,9 @@ These are the cognitive architecture repositories for PILLAR and their content:
 
 ## Table of Contents
 
-**[Design](#design)**<br>
-**[Installation](#installation)**<br>
-**[Execution](#execution)**<br>
+- **[Design](#design)**
+- **[Installation](#installation)**
+- **[Execution](#execution)**
 
 ## Design
 
@@ -40,6 +40,12 @@ In this figure we can see a more detailed view of the design of the core of the 
 - Commander node. A client component cannot directly manage the execution nodes. Instead, it interacts with the Commander node façade through its ROS2 interface (services and topics).
 - Cognitive nodes. The architecture must necessarily include at least one package with an implementation of specific cognitive nodes of the cognitive mechanism: perceptions, policies, needs, goals, etc. The current reference implementation is in the [emdb_cognitive_nodes_gii repository](https://github.com/GII/emdb_cognitive_nodes_gii), but it is possible to replace it with another one that fulfill the same interface.
 - Cognitive processes. The current reference implementation is in the [emdb_cognitive_processes_gii repository](https://github.com/GII/emdb_cognitive_processes_gii). Right now, there is only one process, the Main Cognitive Loop. This process handles the classical e-MDB loop: reading perceptions, calculation of activations (determining relevant contexts), selecting policies, and executing policies.
+
+This repository is dedicated to store the execution middleware (commander node + execution node) and the long-term memory development. There are 3 ROS 2 packages:
+
+- _core_. Implementation for the commander node, the execution node, the long-term memory, and the base implementation for all the cognitive nodes. 
+- _core_interfaces_. Needed services and messages definitions.
+- _dummny_nodes_. Minimum implementation for each cognitive node. The idea is to have cognitive nodes as barebones as possible to run experiments where we only want to focus on an specific cognitive node variation / algorithm. In these cases, we want to reduce the remaining part of the cognitive architecture to a minimum functional set of elements, to avoid interferences when studying a specific change in a given cognitive node.
 
 ## Installation
 
