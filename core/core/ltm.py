@@ -418,7 +418,7 @@ class LTM(Node):
     # endregion CRUD operations
 
     def add_neighbor(self, neighbor_name, neighbor_type, service_node_name): #TODO Implement
-        service_name = 'cognitive_node/' + service_node_name + '/add_neighbor'
+        service_name = 'cognitive_node/' + str(service_node_name) + '/add_neighbor'
         neighbor_client=ServiceClient(AddNeighbor, service_name)
         result=neighbor_client.send_request(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
         return result
