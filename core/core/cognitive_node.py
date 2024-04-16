@@ -123,7 +123,7 @@ class CognitiveNode(Node):
         :return: The response from the LTM service.
         :rtype: core_interfaces.srv.AddNodeToLTM_Response
         """
-
+        
         data = yaml.dump({**data_dic, 'activation': self.activation, 'perception': self.perception, 'neighbors': self.neighbors})
 
         service_name = 'ltm_0' + '/add_node' # TODO choose LTM ID
