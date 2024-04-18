@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
 import ament_index_python.packages
 import rospkg
@@ -9,7 +9,12 @@ import os
 
 
 def generate_launch_description():
+
+    load_mdb=ExecuteProcess(cmd=['ros2', 'launch', 'core', 'mdb_launch.py'],output='screen')
+
     return LaunchDescription([
+
+        load_mdb,
 
         DeclareLaunchArgument(
             'random_seed',
@@ -19,29 +24,6 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'config_file',
             default_value="/home/goi2/MDB_ws/src/emdb_experiments_gii/experiments/experiment_try.yaml" #TODO It has to be a relative path
-        ),
-        # Node definitions
-        Node(
-            package='core',
-            executable='commander',
-            output='screen',
-        ),
-        Node(
-            package='core',
-            executable='ltm',
-            output='screen',
-            arguments=['0']
-        )
-        ,
-        Node(
-            package='core',
-            executable='execution_node',
-            output='screen',
-        ),
-        Node(
-            package='core',
-            executable='execution_node',
-            output='screen',
         ),
         Node(
             package='simulators',

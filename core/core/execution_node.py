@@ -5,8 +5,8 @@ import yaml
 import importlib
 
 from rclpy.node import Node
-from rclpy.executors import SingleThreadedExecutor
-# from rclpy.executors import MultiThreadedExecutor
+#from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import MultiThreadedExecutor
 
 from core.service_client import ServiceClient
 
@@ -353,7 +353,7 @@ class ExecutionNode(Node):
 # single threaded executor
 def main(args=None):
     rclpy.init(args=args)
-    executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
+    executor = MultiThreadedExecutor(num_threads=2) # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor)
     executor.add_node(execution_node)
 
