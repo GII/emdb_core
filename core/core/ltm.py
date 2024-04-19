@@ -357,6 +357,7 @@ class LTM(Node):
         :type node_data: dict
         """
         self.cognitive_nodes[node_type][node_name] = node_data
+        node_dict={'name': node_name, 'node_type': node_type}
 
         #TODO: Neighbor handling
 
@@ -371,9 +372,19 @@ class LTM(Node):
                 neighbors=[{'name': perception, 'node_type': 'Perception'} for perception in self.cognitive_nodes['Perception']]
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors 
 
+            # for neighbor in neighbors: #TODO: Fix service calls to allow calling this method
+            #     self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
+
 
         for neighbor in node_data['neighbors']:
-            self.add_neighbor(node_name,node_type,neighbor) 
+            neighbor_name=neighbor['name']
+            self.add_neighbor(node_name,node_type,neighbor_name)
+
+
+            for neighbor_type in self.cognitive_nodes:
+                if neighbor_name in self.cognitive_nodes[neighbor_type]:
+                    self.cognitive_nodes[neighbor_type][neighbor_name]['neighbors'].append(node_dict)
+
         self.publish_state()
     
     def delete_node(self, node_type, node_name):
@@ -417,8 +428,8 @@ class LTM(Node):
     
     # endregion CRUD operations
 
-    def add_neighbor(self, neighbor_name, neighbor_type, service_node_name): #TODO Implement
-        service_name = 'cognitive_node/' + str(service_node_name['name']) + '/add_neighbor'
+    def add_neighbor(self, neighbor_name, neighbor_type, service_node_name):
+        service_name = 'cognitive_node/' + service_node_name + '/add_neighbor'
         neighbor_client=ServiceClient(AddNeighbor, service_name)
         result=neighbor_client.send_request(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
         return result
