@@ -1,7 +1,9 @@
 import yaml
 from rclpy.node import Node
+from rclpy import spin_until_future_complete
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
-from core.service_client import ServiceClient
+from core.service_client import ServiceClient, ServiceClientAsync
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM
 from cognitive_node_interfaces.srv import GetActivation, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
 from cognitive_node_interfaces.msg import Activation
@@ -45,6 +47,9 @@ class CognitiveNode(Node):
         for key, value in params.items():
             setattr(self, key, value)
 
+        self.cbgroup_server=MutuallyExclusiveCallbackGroup()
+        self.cbgroup_client=MutuallyExclusiveCallbackGroup()
+
         # Publish node activation topic (when SetActivationTopic is true)
         self.publish_activation_topic = self.create_publisher(
             Activation,
@@ -56,35 +61,35 @@ class CognitiveNode(Node):
         self.get_activation_service = self.create_service(
             GetActivation,
             'cognitive_node/' + str(name) + '/get_activation',
-            self.get_activation_callback
+            self.get_activation_callback, callback_group=self.cbgroup_server
         )
         
         # Get Information Service
         self.get_information_service = self.create_service(
             GetInformation,
             'cognitive_node/' + str(name) + '/get_information',
-            self.get_information_callback
+            self.get_information_callback, callback_group=self.cbgroup_server
         )
         
         # Set Activation Topic Service
         self.set_activation_service = self.create_service(
             SetActivationTopic,
             'cognitive_node/' + str(name) + '/set_activation_topic',
-            self.set_activation_topic_callback
+            self.set_activation_topic_callback, callback_group=self.cbgroup_server
         )
 
         #Add Neighbor Service
         self.add_neighbor_service = self.create_service(
             AddNeighbor,
             'cognitive_node/' + str(name) + '/add_neighbor',
-            self.add_neighbor_callback
+            self.add_neighbor_callback, callback_group=self.cbgroup_server
         )
 
         #Delete Neighbor Service
         self.delete_neighbor_service = self.create_service(
             DeleteNeighbor,
             'cognitive_node/' + str(name) + '/delete_neighbor',
-            self.delete_neighbor_callback
+            self.delete_neighbor_callback, callback_group=self.cbgroup_server
         )
 
     def get_data(self):
@@ -116,20 +121,24 @@ class CognitiveNode(Node):
     
     def register_in_LTM(self, data_dic):
         """
-        Registers the node in the LTM.
+        Requests registering the node in the LTM. 
 
         :param data_dic: A dictionary with the data to be saved.
         :type data_dic: dict
-        :return: The response from the LTM service.
-        :rtype: core_interfaces.srv.AddNodeToLTM_Response
+        :return: A future that will contain the response from the LTM service.
+        :rtype: rclpy.task.Future
         """
+        self.get_logger().info(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
         
         data = yaml.dump({**data_dic, 'activation': self.activation, 'perception': self.perception, 'neighbors': self.neighbors})
 
         service_name = 'ltm_0' + '/add_node' # TODO choose LTM ID
-        add_node_to_LTM_client = ServiceClient(AddNodeToLTM, service_name)
-        ltm_response = add_node_to_LTM_client.send_request(name=self.name, node_type=self.node_type, data=data)
-        add_node_to_LTM_client.destroy_node()
+        add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name, self.cbgroup_client)
+        ltm_response = add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
+        spin_until_future_complete(self, ltm_response)
+
+        self.get_logger().info(f'DEBUG FINISH Registering {self.node_type} {self.name} in LTM...')
+
         return ltm_response
     
     def remove_from_LTM(self):
@@ -178,8 +187,10 @@ class CognitiveNode(Node):
         :return: The response that indicates if the neighbor was added
         :rtype: cognitive_node_interfaces.srv.AddNeighbor_Response
         """
+        
         name = request.neighbor_name
         type = request.neighbor_type
+        self.get_logger().info(f'DEBUG: Adding {type} {name} as neighbor of {self.node_type} {self.name}')
         neighbor = {'name':name, 'node_type':type}
         self.neighbors.append(neighbor)
         response.added = True

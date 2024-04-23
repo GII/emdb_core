@@ -4,10 +4,11 @@ import yaml
 import random
 
 from rclpy.node import Node
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from core.config import saved_data_dir
 
 from std_msgs.msg import String
-from core.service_client import ServiceClient
+from core.service_client import ServiceClient, ServiceClientAsync
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
@@ -34,6 +35,8 @@ class CommanderNode(Node):
         self.last_id = 0
         self.executor_ids = []
         self.nodes = {}
+        self.cbgroup_client=MutuallyExclusiveCallbackGroup()
+        self.cbgroup_server=MutuallyExclusiveCallbackGroup()
 
         for executor_id in self.executor_ids:
             self.nodes[executor_id] = []
@@ -42,84 +45,84 @@ class CommanderNode(Node):
         self.add_execution_node_service = self.create_service(
             AddExecutionNode,
             'commander/add_executor',
-            self.add_execution_node
+            self.add_execution_node, callback_group=self.cbgroup_server
         )
 
         # Delete Execution Node Service for the User
         self.delete_execution_node_service = self.create_service(
             DeleteExecutionNode,
             'commander/delete_executor',
-            self.delete_execution_node
+            self.delete_execution_node, callback_group=self.cbgroup_server
         )
 
         # Move Cognitive Node Service for the User
         self.move_cognitive_node_service = self.create_service(
             MoveCognitiveNodeToExecutionNode,
             'commander/move_cognitive_node_to',
-            self.move_cognitive_node_to
+            self.move_cognitive_node_to, callback_group=self.cbgroup_server
         )
 
         # Create Node Service for the User
         self.create_node_service = self.create_service(
             CreateNode,
             'commander/create',
-            self.create_node
+            self.create_node, callback_group=self.cbgroup_server
         )
                 
         # Read Node Service for the User
         self.read_node_service = self.create_service(
             ReadNode,
             'commander/read',
-            self.read_node
+            self.read_node, callback_group=self.cbgroup_server
         )
                 
         # Delete Node Service for the User
         self.delete_node_service = self.create_service(
             DeleteNode,
             'commander/delete',
-            self.delete_node
+            self.delete_node, callback_group=self.cbgroup_server
         )
                 
         # Save Node Service for the User
         self.save_node_service = self.create_service(
             SaveNode,
             'commander/save',
-            self.save_node
+            self.save_node, callback_group=self.cbgroup_server
         )
 
         # Load Node Service for the User
         self.load_node_service = self.create_service(
             LoadNode,
             'commander/load',
-            self.load_node
+            self.load_node, callback_group=self.cbgroup_server
         )
 
         # Load Config Service for the User
         self.load_config_service = self.create_service(
             LoadConfig,
             'commander/load_config',
-            self.load_experiment
+            self.load_experiment, callback_group=self.cbgroup_server
         )
 
         # Save Config Service for the User
         self.save_config_service = self.create_service(
             SaveConfig,
             'commander/save_config',
-            self.save_config
+            self.save_config, callback_group=self.cbgroup_server
         )
 
         # Stop Execution Service for the User
         self.stop_execution_service = self.create_service(
             StopExecution,
             'commander/stop_execution',
-            self.stop_execution
+            self.stop_execution, callback_group=self.cbgroup_server
         )
 
         # Stop Execution Topic
         self.stop_execution_node_publisher = self.create_publisher(
            String,
            'stop_execution_node',
-           10 
+           10
         )
 
     def add_execution_node(self, request, response):
@@ -256,7 +259,7 @@ class CommanderNode(Node):
         return response
 
     
-    def create_node(self, request, response):
+    async def create_node(self, request, response):
         """
         Handle the creation of a cognitive node.
 
@@ -288,7 +291,7 @@ class CommanderNode(Node):
            
             ex = self.get_lowest_load_executor()
             
-            executor_response = self.send_create_request_to_executor(ex, name, class_name, parameters)
+            executor_response = await self.send_create_request_to_executor(ex, name, class_name, parameters)
             
             self.register_node(ex, name)
             
@@ -446,7 +449,7 @@ class CommanderNode(Node):
                     
         return response
     
-    def load_experiment(self, request, response):
+    async def load_experiment(self, request, response):
         """
         Load an experiment from a file.
 
@@ -495,8 +498,12 @@ class CommanderNode(Node):
                     else:
                     
                         ex = self.get_lowest_load_executor()
+
+                        self.get_logger().info('AWAIT START: Create node in execution node')
                         
-                        executor_response = self.send_create_request_to_executor(ex, name, class_name, parameters)
+                        executor_response = await self.send_create_request_to_executor(ex, name, class_name, parameters)
+
+                        self.get_logger().info('AWAIT FINISH: Create node in execution node')
                         
                         self.register_node(ex, name)
                         
@@ -515,7 +522,7 @@ class CommanderNode(Node):
 
                 ex= self.get_lowest_load_executor()
 
-                executor_response= self.send_create_request_to_executor(ex, name, class_name, parameters)
+                executor_response= await self.send_create_request_to_executor(ex, name, class_name, parameters)
                 self.register_node(ex, name)
                 self.get_logger().info(f'Process {name} created in executor {ex}.')
 
@@ -678,10 +685,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.CreateNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/create'
-        create_client = ServiceClient(CreateNode, service_name)
-        executor_response = create_client.send_request(name=name, class_name=class_name, parameters=parameters)       
-        create_client.destroy_node()
-        return executor_response
+        create_client = ServiceClientAsync(self, CreateNode, service_name, self.cbgroup_client)
+        executor_response_future = create_client.send_request_async(name=name, class_name=class_name, parameters=parameters)      
+        return executor_response_future
 
     def send_read_request_to_executor(self, executor_id, name):
         """

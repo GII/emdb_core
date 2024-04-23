@@ -3,10 +3,12 @@ import sys
 import rclpy
 import yaml
 import importlib
+import asyncio
 
 from rclpy.node import Node
-#from rclpy.executors import SingleThreadedExecutor
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
+#from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 from core.service_client import ServiceClient
 
@@ -44,6 +46,8 @@ class ExecutionNode(Node):
         self.id = id
         self.nodes = {}
         self.executor = executor
+        self.cbgroup_server=MutuallyExclusiveCallbackGroup()
+        
 
         self.get_logger().info('Creating execution services')
                 
@@ -51,56 +55,56 @@ class ExecutionNode(Node):
         self.create_node_service = self.create_service(
             CreateNode,
             'execution_node_' + str(self.id) + '/create',
-            self.create_node
+            self.create_node, callback_group=self.cbgroup_server
         )
                 
         # Read Node Service for the Commander Node
         self.read_node_service = self.create_service(
             ReadNode,
             'execution_node_' + str(self.id) + '/read',
-            self.read_node
+            self.read_node, callback_group=self.cbgroup_server
         )
                 
         # Delete Node Service for the Commander Node
         self.delete_node_service = self.create_service(
             DeleteNode,
             'execution_node_' + str(self.id) + '/delete',
-            self.delete_node
+            self.delete_node, callback_group=self.cbgroup_server
         )
                 
         # Save Node Service for the Commander Node
         self.save_node_service = self.create_service(
             SaveNode,
             'execution_node_' + str(self.id) + '/save',
-            self.save_node
+            self.save_node, callback_group=self.cbgroup_server
         )
 
         # Load Node Service for the Commander Node
         self.load_node_service = self.create_service(
             LoadNode,
             'execution_node_' + str(self.id) + '/load',
-            self.load_node
+            self.load_node, callback_group=self.cbgroup_server
         )
 
         # Read All Nodes service for the Commander Node
         self.read_all_nodes = self.create_service(
             ReadNode,
             'execution_node_' + str(self.id) + '/read_all_nodes',
-            self.read_all_nodes
+            self.read_all_nodes, callback_group=self.cbgroup_server
         )
 
         # Save All Nodes service for the Commander Node
         self.save_all_nodes = self.create_service(
             SaveNode,
             'execution_node_' + str(self.id) + '/save_all_nodes',
-            self.save_all_nodes
+            self.save_all_nodes, callback_group=self.cbgroup_server
         )
 
         # Stop Execution service for the Commander Node
         self.stop_execution = self.create_service(
             StopExecution,
             'execution_node_' + str(self.id) + '/stop_execution',
-            self.stop_execution
+            self.stop_execution, callback_group=self.cbgroup_server
         )
 
         # Stop Execution topic for the Commander Node
@@ -114,7 +118,7 @@ class ExecutionNode(Node):
         self.get_logger().info('Execution node created')
 
     
-    def create_node(self, request, response):
+    async def create_node(self, request, response):
         """
         Create a new cognitive node.
         If the node doesn't have previous data, it is created with the default values.
@@ -353,7 +357,7 @@ class ExecutionNode(Node):
 # single threaded executor
 def main(args=None):
     rclpy.init(args=args)
-    executor = MultiThreadedExecutor(num_threads=2) # TODO: TBD if it is single or multi threaded executor.
+    executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor)
     executor.add_node(execution_node)
 
