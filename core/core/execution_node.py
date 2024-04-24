@@ -5,7 +5,7 @@ import yaml
 import importlib
 
 from rclpy.node import Node
-#from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.executors import MultiThreadedExecutor
 
 from core.service_client import ServiceClient
@@ -357,14 +357,16 @@ def main(args=None):
     execution_node = ExecutionNode(executor)
     executor.add_node(execution_node)
 
-    try:
-        executor.spin()
-    except KeyboardInterrupt:
-        pass
 
-    for node in execution_node.nodes.values():
-        executor.remove_node(node)
-        node.destroy_node()
+    executor.spin()
+    # try:
+    #     executor.spin()
+    # except KeyboardInterrupt:
+    #     pass
+
+    # for node in execution_node.nodes.values():
+    #     executor.remove_node(node)
+    #     node.destroy_node()
 
 # # multi threaded executor
 # def main(args=None):
