@@ -146,6 +146,10 @@ class ExecutionNode(Node):
 
         self.executor.add_node(new_node)
 
+        register_method = getattr(new_node, 'register_in_LTM', None)
+        if callable(register_method):
+            await register_method({})
+
         self.get_logger().info(f'Added node: {name}.')
         response.created = True
         return response

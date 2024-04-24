@@ -119,7 +119,7 @@ class CognitiveNode(Node):
 
         return node_data
     
-    def register_in_LTM(self, data_dic):
+    async def register_in_LTM(self, data_dic):
         """
         Requests registering the node in the LTM. 
 
@@ -128,16 +128,15 @@ class CognitiveNode(Node):
         :return: A future that will contain the response from the LTM service.
         :rtype: rclpy.task.Future
         """
-        self.get_logger().info(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
+        self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
         
         data = yaml.dump({**data_dic, 'activation': self.activation, 'perception': self.perception, 'neighbors': self.neighbors})
 
         service_name = 'ltm_0' + '/add_node' # TODO choose LTM ID
         add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name, self.cbgroup_client)
         ltm_response = add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
-        spin_until_future_complete(self, ltm_response)
-
-        self.get_logger().info(f'DEBUG FINISH Registering {self.node_type} {self.name} in LTM...')
+        await ltm_response
+        self.get_logger().debug(f'DEBUG FINISH Registering {self.node_type} {self.name} in LTM...')
 
         return ltm_response
     

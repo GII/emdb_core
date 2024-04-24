@@ -11,7 +11,6 @@ import os
 def generate_launch_description():
 
     load_mdb=ExecuteProcess(cmd=['ros2', 'launch', 'core', 'mdb_launch.py'],output='screen')
-    experiment_load=ExecuteProcess(cmd=['ros2', 'service', 'call', '/commander/load_config', 'core_interfaces/srv/LoadConfig', "\"{file: '/home/efallash/ros2_ws/src/MDB/emdb_experiments_gii/experiments/experiment_try.yaml'}\""], shell=True, output='screen')
 
     return LaunchDescription([
 
@@ -26,6 +25,10 @@ def generate_launch_description():
             'config_file',
             default_value="/home/efallash/ros2_ws/src/MDB/emdb_experiments_gii/experiments/experiment_try.yaml" #TODO It has to be a relative path
         ),
-
-        experiment_load
+        Node(
+            package='simulators',
+            executable='simulator',
+            output='screen',
+            parameters=[{'random_seed':LaunchConfiguration('random_seed'), 'config_file':LaunchConfiguration('config_file')}]
+        )
     ])

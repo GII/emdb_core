@@ -259,7 +259,7 @@ class CommanderNode(Node):
         return response
 
     
-    async def create_node(self, request, response):
+    def create_node(self, request, response):
         """
         Handle the creation of a cognitive node.
 
@@ -291,7 +291,7 @@ class CommanderNode(Node):
            
             ex = self.get_lowest_load_executor()
             
-            executor_response = await self.send_create_request_to_executor(ex, name, class_name, parameters)
+            executor_response = self.send_create_request_to_executor(ex, name, class_name, parameters)
             
             self.register_node(ex, name)
             
@@ -449,7 +449,7 @@ class CommanderNode(Node):
                     
         return response
     
-    async def load_experiment(self, request, response):
+    def load_experiment(self, request, response):
         """
         Load an experiment from a file.
 
@@ -499,11 +499,11 @@ class CommanderNode(Node):
                     
                         ex = self.get_lowest_load_executor()
 
-                        self.get_logger().info('AWAIT START: Create node in execution node')
+                        self.get_logger().debug('CLIENT START: Create node in execution node')
                         
-                        executor_response = await self.send_create_request_to_executor(ex, name, class_name, parameters)
+                        executor_response = self.send_create_request_to_executor(ex, name, class_name, parameters)
 
-                        self.get_logger().info('AWAIT FINISH: Create node in execution node')
+                        self.get_logger().debug('CLIENT FINISH: Create node in execution node')
                         
                         self.register_node(ex, name)
                         
@@ -522,7 +522,7 @@ class CommanderNode(Node):
 
                 ex= self.get_lowest_load_executor()
 
-                executor_response= await self.send_create_request_to_executor(ex, name, class_name, parameters)
+                executor_response= self.send_create_request_to_executor(ex, name, class_name, parameters)
                 self.register_node(ex, name)
                 self.get_logger().info(f'Process {name} created in executor {ex}.')
 
@@ -685,9 +685,10 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.CreateNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/create'
-        create_client = ServiceClientAsync(self, CreateNode, service_name, self.cbgroup_client)
-        executor_response_future = create_client.send_request_async(name=name, class_name=class_name, parameters=parameters)      
-        return executor_response_future
+        create_client = ServiceClient(CreateNode, service_name)
+        executor_response = create_client.send_request(name=name, class_name=class_name, parameters=parameters)       
+        create_client.destroy_node()
+        return executor_response
 
     def send_read_request_to_executor(self, executor_id, name):
         """

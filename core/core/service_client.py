@@ -40,20 +40,6 @@ class ServiceClient(Node):
         rclpy.spin_until_future_complete(self, self.future)
         return self.future.result()
     
-    def send_request_async(self, **kwargs):
-        """
-        Send a request to the service using asyncio.
-
-        :param kwargs: Keyword arguments representing the request parameters.
-        :type kwargs: dict
-        :return: The response from the service.
-        :rtype: type
-        """        
-        for key, value in kwargs.items():
-            setattr(self.req, key, value)
-        self.future = self.cli.call_async(self.req)
-        return self.future
-    
 class ServiceClientAsync():
 
     def __init__(self, node:Node, service_type, service_name, callback_group) -> None:

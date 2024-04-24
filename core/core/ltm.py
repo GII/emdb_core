@@ -218,14 +218,14 @@ class LTM(Node):
             data = str(request.data)
             data_dic = yaml.load(data, Loader=yaml.FullLoader)
             self.get_logger().info('DEBUG START: Adding node')
-            self.add_node(node_type, name, data_dic) 
+            await self.add_node(node_type, name, data_dic) 
             self.get_logger().info('DEBUG FINISH: Adding node')    
             self.get_logger().info(f"Added {node_type} {name}")
             response.added = True
 
         return response
     
-    async def replace_node_callback(self, request, response):
+    def replace_node_callback(self, request, response):
         """
         Callback function for the 'replace_node' service.
         Replaces an existing cognitive node in the LTM.
@@ -264,7 +264,7 @@ class LTM(Node):
 
         return response
     
-    async def delete_node_callback(self, request, response):
+    def delete_node_callback(self, request, response):
         """
         Callback function for the 'delete_node' service.
         Deletes a cognitive node from the LTM.
@@ -292,7 +292,7 @@ class LTM(Node):
         response.deleted = False
         return response
     
-    async def get_node_callback(self, request, response):
+    def get_node_callback(self, request, response):
         """
         Callback function for the 'get_node' service.
         Retrieves data of a specific cognitive node from the LTM.
@@ -329,7 +329,7 @@ class LTM(Node):
             response.data = ""
             return response
     
-    async def set_changes_topic_callback(self, request, response):
+    def set_changes_topic_callback(self, request, response):
         """
         Callback function for the 'set_changes_topic' service.
         Sets the topic for tracking changes in the LTM.
@@ -353,7 +353,7 @@ class LTM(Node):
     # endregion Callbacks
     
     # region CRUD operations
-    def add_node(self, node_type, node_name, node_data):
+    async def add_node(self, node_type, node_name, node_data):
         """
         Add a cognitive node to the LTM.
 
@@ -369,30 +369,35 @@ class LTM(Node):
 
         #TODO: Neighbor handling
 
+        #If neighbors have not been assiged to the node in creation time, assign neighbors according to type
         if not node_data['neighbors']:
+            #Perceptions are linked to Goals, World Models and Policies
             if node_type=='Perception':
                 goals= [{'name': goal, 'node_type': 'Goal'} for goal in self.cognitive_nodes['Goal']]
                 world_models= [{'name': WM, 'node_type': 'WorldModel'} for WM in self.cognitive_nodes['WorldModel']]
                 policies= [{'name': policy, 'node_type': 'Policy'} for policy in self.cognitive_nodes['Policy']]
                 neighbors=goals+world_models+policies
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors
+            #Any other node type is linked to all perceptions
             else:
                 neighbors=[{'name': perception, 'node_type': 'Perception'} for perception in self.cognitive_nodes['Perception']]
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors 
 
+            #Calls AddNode service of the new node to add the required neighbors in node's internal dictionary
             for neighbor in neighbors: #TODO: Fix service calls to allow calling this method
-                self.get_logger().info('SPIN START: Adding neighbors to new node')
+                self.get_logger().debug(f'AWAIT START: Adding neighbor {neighbor["name"]} to new node {node_name}')
                 neighbor_future=self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
-                spin_until_future_complete(self, neighbor_future)
-                self.get_logger().info('SPIN FINISH: Adding neighbors to new node')
+                await neighbor_future
+                self.get_logger().debug(f'AWAIT FINISH: Adding neighbor {neighbor["name"]} to new node {node_name}')
 
 
+        #Add the new node to the dictionary of the corresponding neighbors
         for neighbor in self.cognitive_nodes[node_type][node_name]['neighbors']:
             neighbor_name=neighbor['name']
-            self.get_logger().info(f'SPIN START: Adding new node {node_name}  as neighbor of {neighbor_name}')
-            self.add_neighbor(node_name,node_type,neighbor_name)
-            spin_until_future_complete(self, neighbor_future)
-            self.get_logger().info(f'SPIN FINISH: Adding new node {node_name}  as neighbor of {neighbor_name}')
+            self.get_logger().debug(f'AWAIT START: Adding new node {node_name}  as neighbor of {neighbor_name}')
+            neighbor_future=self.add_neighbor(node_name,node_type,neighbor_name)
+            await neighbor_future
+            self.get_logger().debug(f'AWAIT FINISH: Adding new node {node_name}  as neighbor of {neighbor_name}')
 
 
             for neighbor_type in self.cognitive_nodes:
