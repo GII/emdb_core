@@ -43,7 +43,7 @@ class LTM(Node):
         self.changes_topic = True
         # TODO Remove ANode and BNode
         # TODO Create keys from config file
-        self.cognitive_nodes = {'ANode': {}, 'BNode': {}, 'Drive': {}, 'Goal': {}, 'Need': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
+        self.cognitive_nodes = {'CNode': {}, 'Drive': {}, 'Goal': {}, 'Need': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
         
         # State topic
         self.state_publisher = self.create_publisher(
