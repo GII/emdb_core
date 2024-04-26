@@ -10,7 +10,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "log_level",
-            default_value=["debug"],
+            default_value=["info"],
             description="Logging level",
         ),
         DeclareLaunchArgument(
@@ -37,18 +37,6 @@ def generate_launch_description():
             arguments=['0', '--ros-args', '--log-level', logger]
         )
         ,
-        Node(
-            package='core',
-            executable='execution_node',
-            output='screen',
-            arguments=['0', '--ros-args', '--log-level', logger]
-        ),
-        Node(
-            package='core',
-            executable='execution_node',
-            output='screen',
-            arguments=['0', '--ros-args', '--log-level', logger]
-        ),
         Node(
             package='core',
             executable='execution_node',

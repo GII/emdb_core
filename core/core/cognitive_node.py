@@ -221,7 +221,7 @@ class CognitiveNode(Node):
 
         
 
-    def get_activation_callback(self, request, response): 
+    async def get_activation_callback(self, request, response): 
         """
         Callback method to calculate and return the node's activations.
         This method calculates the activation of the node based on its perception.
@@ -231,7 +231,10 @@ class CognitiveNode(Node):
         """
         self.get_logger().info('Getting node activation...')
         perception = perception_msg_to_dict(request.perception)
-        self.calculate_activation(perception)
+        if self.node_type in ["CNode", "Policy"]:
+            await self.calculate_activation(perception)
+        else:
+            self.calculate_activation(perception)
         response.activation = self.activation
         return response
 
