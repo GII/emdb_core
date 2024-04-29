@@ -386,8 +386,7 @@ class LTM(Node):
             #Calls AddNode service of the new node to add the required neighbors in node's internal dictionary
             for neighbor in neighbors: #TODO: Fix service calls to allow calling this method
                 self.get_logger().debug(f'AWAIT START: Adding neighbor {neighbor["name"]} to new node {node_name}')
-                neighbor_future=self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
-                await neighbor_future
+                await self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
                 self.get_logger().debug(f'AWAIT FINISH: Adding neighbor {neighbor["name"]} to new node {node_name}')
 
 
@@ -395,8 +394,7 @@ class LTM(Node):
         for neighbor in self.cognitive_nodes[node_type][node_name]['neighbors']:
             neighbor_name=neighbor['name']
             self.get_logger().debug(f'AWAIT START: Adding new node {node_name}  as neighbor of {neighbor_name}')
-            neighbor_future=self.add_neighbor(node_name,node_type,neighbor_name)
-            await neighbor_future
+            await self.add_neighbor(node_name,node_type,neighbor_name)
             self.get_logger().debug(f'AWAIT FINISH: Adding new node {node_name}  as neighbor of {neighbor_name}')
 
 
@@ -447,11 +445,12 @@ class LTM(Node):
     
     # endregion CRUD operations
 
-    def add_neighbor(self, neighbor_name, neighbor_type, service_node_name):
+    async def add_neighbor(self, neighbor_name, neighbor_type, service_node_name):
         service_name = 'cognitive_node/' + service_node_name + '/add_neighbor'
         neighbor_client=ServiceClientAsync(self, AddNeighbor, service_name, callback_group=self.cbgroup_client)
-        future=neighbor_client.send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
-        return future
+        result = await neighbor_client.send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
+        neighbor_client.cli.destroy()
+        return result
 
 def main(args=None):
     rclpy.init()
