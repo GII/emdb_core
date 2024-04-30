@@ -50,6 +50,8 @@ class CognitiveNode(Node):
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
 
+        self.clients={} #Keys are service name, values are service client object e.g. {'cognitive_node/policy0/get_activation: "Object: Node.client"'}
+
         # Publish node activation topic (when SetActivationTopic is true)
         self.publish_activation_topic = self.create_publisher(
             Activation,
