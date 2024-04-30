@@ -50,7 +50,7 @@ class CognitiveNode(Node):
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
 
-        self.clients={} #Keys are service name, values are service client object e.g. {'cognitive_node/policy0/get_activation: "Object: Node.client"'}
+        self.node_clients={} #Keys are service name, values are service client object e.g. {'cognitive_node/policy0/get_activation: "Object: Node.client"'}
 
         # Publish node activation topic (when SetActivationTopic is true)
         self.publish_activation_topic = self.create_publisher(
@@ -94,6 +94,12 @@ class CognitiveNode(Node):
             self.delete_neighbor_callback, callback_group=self.cbgroup_server
         )
 
+        service_name_add_LTM = 'ltm_0' + '/add_node' # TODO choose LTM ID
+        self.add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name_add_LTM, self.cbgroup_client)
+
+        service_name_delete_LTM = 'ltm_0' + '/delete_node' # TODO: choose the ltm ID
+        self.delete_node_client = ServiceClient(self, DeleteNodeFromLTM, service_name_delete_LTM, self.cbgroup_client)
+    
     def get_data(self):
         """
         Get the data associated with the node.
@@ -134,9 +140,7 @@ class CognitiveNode(Node):
         
         data = yaml.dump({**data_dic, 'activation': self.activation, 'perception': self.perception, 'neighbors': self.neighbors})
 
-        service_name = 'ltm_0' + '/add_node' # TODO choose LTM ID
-        add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name, self.cbgroup_client)
-        ltm_response = add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
+        ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
         await ltm_response
         self.get_logger().debug(f'DEBUG FINISH Registering {self.node_type} {self.name} in LTM...')
 
@@ -148,11 +152,7 @@ class CognitiveNode(Node):
         :return: True if the operation was succesful, False otherwise.
         :rtype: core_interfaces.srv.DeleteNodeFromLTM_Response
         """
-
-        service_name = 'ltm_0' + '/delete_node' # TODO: choose the ltm ID
-        delete_node_client = ServiceClient(DeleteNodeFromLTM, service_name)
-        ltm_response = delete_node_client.send_request(name=self.name)
-        delete_node_client.destroy_node()
+        ltm_response = self.delete_node_client.send_request(name=self.name)
         return ltm_response.deleted
    
     def calculate_activation(self, perception):
