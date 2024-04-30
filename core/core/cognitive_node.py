@@ -98,7 +98,7 @@ class CognitiveNode(Node):
         self.add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name_add_LTM, self.cbgroup_client)
 
         service_name_delete_LTM = 'ltm_0' + '/delete_node' # TODO: choose the ltm ID
-        self.delete_node_client = ServiceClient(self, DeleteNodeFromLTM, service_name_delete_LTM, self.cbgroup_client)
+        self.delete_node_client = ServiceClientAsync(self, DeleteNodeFromLTM, service_name_delete_LTM, self.cbgroup_client)
     
     def get_data(self):
         """
@@ -152,7 +152,7 @@ class CognitiveNode(Node):
         :return: True if the operation was succesful, False otherwise.
         :rtype: core_interfaces.srv.DeleteNodeFromLTM_Response
         """
-        ltm_response = self.delete_node_client.send_request(name=self.name)
+        ltm_response = self.delete_node_client.send_request_async(name=self.name)
         return ltm_response.deleted
    
     def calculate_activation(self, perception):
