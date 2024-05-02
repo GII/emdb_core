@@ -55,6 +55,8 @@ class LTM(Node):
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
 
+        self.node_clients={}
+
         # Add node service
         self.add_node_service = self.create_service(
             AddNodeToLTM,
@@ -447,9 +449,9 @@ class LTM(Node):
 
     async def add_neighbor(self, neighbor_name, neighbor_type, service_node_name):
         service_name = 'cognitive_node/' + service_node_name + '/add_neighbor'
-        neighbor_client=ServiceClientAsync(self, AddNeighbor, service_name, callback_group=self.cbgroup_client)
-        result = await neighbor_client.send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
-        neighbor_client.cli.destroy()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name]=ServiceClientAsync(self, AddNeighbor, service_name, callback_group=self.cbgroup_client)
+        result = await self.node_clients[service_name].send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
         return result
 
 def main(args=None):

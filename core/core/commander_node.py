@@ -8,7 +8,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from core.config import saved_data_dir
 
 from std_msgs.msg import String
-from core.service_client import ServiceClient, ServiceClientAsync
+from core.service_client import ServiceClient
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
@@ -37,6 +37,7 @@ class CommanderNode(Node):
         self.nodes = {}
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
+        self.node_clients={}
 
         for executor_id in self.executor_ids:
             self.nodes[executor_id] = []
@@ -685,9 +686,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.CreateNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/create'
-        create_client = ServiceClient(CreateNode, service_name)
-        executor_response = create_client.send_request(name=name, class_name=class_name, parameters=parameters)       
-        create_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(CreateNode, service_name)
+        executor_response = self.node_clients[service_name].send_request(name=name, class_name=class_name, parameters=parameters)
         return executor_response
 
     def send_read_request_to_executor(self, executor_id, name):
@@ -702,9 +703,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.ReadNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/read'
-        read_client = ServiceClient(ReadNode, service_name)
-        executor_response = read_client.send_request(name=name)
-        read_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(ReadNode, service_name)
+        executor_response = self.node_clients[service_name].send_request(name=name)
         return executor_response
 
     def send_delete_request_to_executor(self, executor_id, name):
@@ -721,9 +722,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.DeleteNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/delete'
-        delete_client = ServiceClient(DeleteNode, service_name)
-        executor_response = delete_client.send_request(name=name)
-        delete_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(DeleteNode, service_name)
+        executor_response = self.node_clients[service_name].send_request(name=name)
         return executor_response
 
     def send_save_request_to_executor(self, executor_id, name):
@@ -738,9 +739,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.SaveNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/save'
-        save_client = ServiceClient(SaveNode, service_name)
-        executor_response = save_client.send_request(name=name)
-        save_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(SaveNode, service_name)
+        executor_response = self.node_clients[service_name].send_request(name=name)
         return executor_response
 
     def send_load_request_to_executor(self, executor_id, name, file_path):
@@ -755,9 +756,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.LoadNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/load'
-        load_client = ServiceClient(LoadNode, service_name)
-        executor_response = load_client.send_request(name=name, file=file_path)
-        load_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(LoadNode, service_name)
+        executor_response = self.node_clients.send_request(name=name, file=file_path)
         return executor_response
 
     def send_read_all_nodes_request_to_executor(self, executor_id):
@@ -769,9 +770,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.ReadNode_Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/read_all_nodes'
-        read_all_nodes_client = ServiceClient(ReadNode, service_name)
-        executor_response = read_all_nodes_client.send_request()
-        read_all_nodes_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(ReadNode, service_name)
+        executor_response = self.node_clients[service_name].send_request()
         return executor_response
     
     def send_save_all_nodes_request_to_executor(self, executor_id):
@@ -784,9 +785,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.SaveNode_Response
         """        
         service_name = 'execution_node_' + str(executor_id) + '/save_all_nodes'
-        save_all_nodes_client = ServiceClient(SaveNode, service_name)
-        executor_response = save_all_nodes_client.send_request()
-        save_all_nodes_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(SaveNode, service_name)
+        executor_response = self.node_clients[service_name].send_request()
         return executor_response 
        
     def send_stop_request_to_executor(self, executor_id):
@@ -799,9 +800,9 @@ class CommanderNode(Node):
         :rtype: core_interfaces.srv.StopExecution_Response
         """        
         service_name = 'execution_node_' + str(executor_id) + '/stop_execution'
-        stop_execution_client = ServiceClient(StopExecution, service_name)
-        executor_response = stop_execution_client.send_request()
-        stop_execution_client.destroy_node()
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClient(StopExecution, service_name)
+        executor_response = self.node_clients[service_name].send_request()
         return executor_response
 
 def main(args=None):
