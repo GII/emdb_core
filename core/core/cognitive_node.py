@@ -237,7 +237,7 @@ class CognitiveNode(Node):
             await self.calculate_activation(perception)
         else:
             self.calculate_activation(perception)
-        response.activation = self.activation
+        response.activation = float(self.activation)
         return response
 
     def get_information_callback(self, request, response):
