@@ -191,7 +191,7 @@ class CognitiveNode(Node):
         
         name = request.neighbor_name
         type = request.neighbor_type
-        self.get_logger().info(f'DEBUG: Adding {type} {name} as neighbor of {self.node_type} {self.name}')
+        self.get_logger().debug(f'Adding {type} {name} as neighbor of {self.node_type} {self.name}')
         neighbor = {'name':name, 'node_type':type}
         self.neighbors.append(neighbor)
         response.added = True
@@ -231,7 +231,7 @@ class CognitiveNode(Node):
         :return: The response with the calculated activation.
         :rtype: cognitive_node_interfaces.srv.GetActivation_Response
         """
-        self.get_logger().info('Getting node activation...')
+        self.get_logger().debug('Getting node activation...')
         perception = perception_msg_to_dict(request.perception)
         if self.node_type in ["CNode", "Policy"]:
             await self.calculate_activation(perception)
