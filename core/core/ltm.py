@@ -97,7 +97,7 @@ class LTM(Node):
             msg = String()
             msg.data = self.cognitive_nodes.__str__()
             self.state_publisher.publish(msg)
-            self.get_logger().info(f"State: {msg.data}")
+            self.get_logger().debug(f"State: {msg.data}")
 
     # region Properties
     @property

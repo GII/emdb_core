@@ -250,13 +250,13 @@ class CognitiveNode(Node):
         :return: The response with the node's information.
         :rtype: cognitive_node_interfaces.srv.GetInformation_Response
         """
-        self.get_logger().info('Getting node information...')
+        self.get_logger().debug('Getting node information...')
         response.node_name = self.name
         response.node_type = self.node_type
         response.current_activation = self.activation
         response.neighbors_name = [neighbor["name"] for neighbor in self.neighbors]
         response.neighbors_type = [neighbor["node_type"] for neighbor in self.neighbors]
-        self.get_logger().info("The type of the node " + str(response.node_name) + "is " + str(response.node_type) +
+        self.get_logger().debug("The type of the node " + str(response.node_name) + "is " + str(response.node_type) +
                               ". Its last activation is: " + str(response.current_activation) +
                                ". It's neighbors are: " + str(response.neighbors_name) + ". The node" +
                                "type of each neighbor is: " + str(response.neighbors_type))
