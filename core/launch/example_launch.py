@@ -25,7 +25,7 @@ def generate_launch_description():
             executable='execution_node',
             output='screen',
             arguments=['0', '--ros-args', '--log-level', logger],
-            prefix=['python3 ', '-m ', 'cProfile ', '-o ', 'profile_results.prof'],
+            #prefix=['python3 ', '-m ', 'cProfile ', '-o ', 'profile_results.prof'],
         )
         simulator = Node(
             package='simulators',
@@ -57,7 +57,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "config_file",
-                default_value="/home/goi2/MDB_ws/src/emdb_experiments_gii/experiments/experiment_try.yaml",
+                default_value="/home/efallash/ros2_ws/src/MDB/emdb_experiments_gii/experiments/experiment_try.yaml",
                 description="The file that loads the experiment config",
             ),
             RegisterEventHandler(event_handler=OnProcessStart(target_action=execution_node,

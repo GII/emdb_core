@@ -2,6 +2,7 @@ import os
 import rclpy
 import yaml
 import random
+import multiprocessing as mp
 
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -9,6 +10,7 @@ from core.config import saved_data_dir
 
 from std_msgs.msg import String
 from core.service_client import ServiceClient
+from core.execution_node import create_execution_node
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
@@ -33,20 +35,18 @@ class CommanderNode(Node):
         super().__init__('commander')
 
         self.last_id = 0
-        self.executor_ids = []
+        self.executors = {} #Dictionary with executors: {id: <multiprocessing.Process>, ...}]
         self.nodes = {}
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.node_clients={}
 
-        for executor_id in self.executor_ids:
-            self.nodes[executor_id] = []
             
         # Add Execution Node Service for the Execution Nodes
         self.add_execution_node_service = self.create_service(
             AddExecutionNode,
             'commander/add_executor',
-            self.add_execution_node, callback_group=self.cbgroup_server
+            self.add_execution_node_callback, callback_group=self.cbgroup_server
         )
 
         # Delete Execution Node Service for the User
@@ -56,7 +56,45 @@ class CommanderNode(Node):
             self.delete_execution_node, callback_group=self.cbgroup_server
         )
 
+        # Load Config Service for the User
+        self.load_config_service = self.create_service(
+            LoadConfig,
+            'commander/load_config',
+            self.load_config, callback_group=self.cbgroup_server
+        )
+
+
+    def load_config(self, request, response):
+        config_file= str(request.file)
+
+        if not os.path.exists(config_file):
+
+            self.get_logger().info(f"Couldn't load config. File {config_file} not found")
+            response.loaded = False
+        
+        else:
+            self.get_logger().info('Loading commander configuration')
+            
+            with open(config_file, 'r') as file:
+                data = yaml.load(file, Loader=yaml.FullLoader)
+            
+            ex_nodes=data['Commander']['ExecutionNode']
+
+            for node in ex_nodes:
+                self.add_execution_node(node['threads'])
+
+            self.configure_services()
+
+        response.loaded=True
+        return response
+    
+    def configure_services(self):
+
+        #Spawn services related to cognitive nodes
+
         # Move Cognitive Node Service for the User
+
+        self.get_logger().info('Configuring Services')
         self.move_cognitive_node_service = self.create_service(
             MoveCognitiveNodeToExecutionNode,
             'commander/move_cognitive_node_to',
@@ -98,13 +136,6 @@ class CommanderNode(Node):
             self.load_node, callback_group=self.cbgroup_server
         )
 
-        # Load Config Service for the User
-        self.load_config_service = self.create_service(
-            LoadConfig,
-            'commander/load_config',
-            self.load_experiment, callback_group=self.cbgroup_server
-        )
-
         # Save Config Service for the User
         self.save_config_service = self.create_service(
             SaveConfig,
@@ -126,7 +157,29 @@ class CommanderNode(Node):
            10
         )
 
-    def add_execution_node(self, request, response):
+        # Load Experiment Service for the User
+        self.load_config_service = self.create_service(
+            LoadConfig,
+            'commander/load_experiment',
+            self.load_experiment, callback_group=self.cbgroup_server
+        )
+
+    def add_execution_node_callback(self, request, response):
+        """
+        Callback for adding a new node to the system with a service call
+
+        :param request: The request to add a new execution node.
+        :type request: core_interfaces.srv.AddExecutionNode_Request
+        :return: The response with the assigned ID for the new execution node.
+        :rtype: core_interfaces.srv.AddExecutionNode_Response
+        """        
+
+        new_id=self.add_execution_node(request.threads)
+
+        response.id = str(new_id)
+        return response
+
+    def add_execution_node(self, threads):
         """
         Adds a new execution node to the system.
 
@@ -140,14 +193,17 @@ class CommanderNode(Node):
         """        
         self.last_id += 1
         new_id = str(self.last_id)
-        
-        self.get_logger().info(f"Adding new execution node with id {new_id}.")
 
-        self.executor_ids.append(new_id)
+        #Spawn child process with executor node
+        p=mp.Process(target=create_execution_node, args=(new_id, threads,))
+        p.start()
+        
+
+        self.get_logger().info(f"Adding new execution node with id {new_id} and PID {p.pid}.")
+        self.executors[new_id]=p
         self.nodes[new_id] = []
         
-        response.id = str(new_id)
-        return response
+        return new_id
 
     def delete_execution_node(self, request, response):
         """
@@ -163,6 +219,8 @@ class CommanderNode(Node):
         :return: The response indicating whether the deletion was successful.
         :rtype: core_interfaces.srv.DeleteExecutionNode_Response
         """        
+        raise NotImplementedError
+
         ex_id = request.id
 
         # save all cognitive nodes
@@ -174,7 +232,7 @@ class CommanderNode(Node):
             self.get_logger().info(f'Deleting executor: {ex_id}...')
             self.send_stop_request_to_executor(ex_id)
             del self.nodes[ex_id]
-            self.executor_ids.remove(ex_id)
+            #del self.executor_ids.remove(ex_id) #TODO: Handle killing the process
 
             # load the cognitive nodes in another executor
 
@@ -562,7 +620,7 @@ class CommanderNode(Node):
 
         node_list = []
 
-        for ex in self.executor_ids:
+        for ex in self.executors:
             self.get_logger().info(f'Reading data from execution node {ex}')
             executor_response = self.send_read_all_nodes_request_to_executor(ex)
             self.get_logger().info(f'Data from execution node {ex} read.')
@@ -597,7 +655,7 @@ class CommanderNode(Node):
         """
         self.get_logger().info(f'Stopping execution...')
 
-        for ex in self.executor_ids:
+        for ex in self.executors:
             executor_response = self.send_stop_request_to_executor(ex)
             self.nodes[ex] = []
             stop_msg = String()
@@ -616,9 +674,10 @@ class CommanderNode(Node):
         :return: The executor with the lowest load.
         :rtype: int
         """
-        pos = random.randint(0, self.executor_ids.__len__() -1)
 
-        ex = self.executor_ids[pos]
+        ex = random.choice(list(self.executors.keys()))
+
+        
         self.get_logger().info('Lowest load executor: ' + str(ex))
         return ex
     
@@ -807,6 +866,10 @@ class CommanderNode(Node):
 
 def main(args=None):
     rclpy.init()
+
+    #Set method for multiprocess spawning
+    mp.set_start_method('spawn')
+    
     commander = CommanderNode()
 
     rclpy.spin(commander)
