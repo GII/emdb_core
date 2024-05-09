@@ -35,14 +35,7 @@ def generate_launch_description():
             executable='ltm',
             output='screen',
             arguments=['0', '--ros-args', '--log-level', logger]
-        )
-        ,
-        # Node(
-        #     package='core',
-        #     executable='execution_node',
-        #     output='screen',
-        #     arguments=['0', '--ros-args', '--log-level', logger]
-        # ),
+        ),
         Node(
             package='simulators',
             executable='simulator',

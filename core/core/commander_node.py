@@ -179,7 +179,7 @@ class CommanderNode(Node):
         response.id = str(new_id)
         return response
 
-    def add_execution_node(self, threads):
+    def add_execution_node(self, threads=1):
         """
         Adds a new execution node to the system.
 
@@ -555,14 +555,14 @@ class CommanderNode(Node):
                         self.get_logger().info(f"Node {name} already exists.")
 
                     else:
-                    
-                        ex = self.get_lowest_load_executor()
-
-                        self.get_logger().debug('CLIENT START: Create node in execution node')
+                        new_ex = node.get('new_executor', False)
+                        new_threads = node.get('thread', 1)
+                        if new_ex:
+                            ex=self.add_execution_node(new_threads)
+                        else:
+                            ex = self.get_lowest_load_executor()
                         
                         executor_response = self.send_create_request_to_executor(ex, name, class_name, parameters)
-
-                        self.get_logger().debug('CLIENT FINISH: Create node in execution node')
                         
                         self.register_node(ex, name)
                         
@@ -579,7 +579,12 @@ class CommanderNode(Node):
 
                 self.get_logger().info(f"Loading {class_name} {name}...")
 
-                ex= self.get_lowest_load_executor()
+                new_ex = experiment_data.get('new_executor', False)
+                new_threads = experiment_data.get('thread', 1)
+                if new_ex:
+                    ex=self.add_execution_node(new_threads)
+                else:
+                    ex = self.get_lowest_load_executor()
 
                 executor_response= self.send_create_request_to_executor(ex, name, class_name, parameters)
                 self.register_node(ex, name)
