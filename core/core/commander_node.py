@@ -101,7 +101,7 @@ class CommanderNode(Node):
         # Load Config Service for the User
         self.load_config_service = self.create_service(
             LoadConfig,
-            'commander/load_config',
+            'commander/load_experiment',
             self.load_experiment, callback_group=self.cbgroup_server
         )
 
