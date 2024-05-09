@@ -868,7 +868,7 @@ def main(args=None):
     rclpy.init()
 
     #Set method for multiprocess spawning
-    mp.set_start_method('spawn')
+    mp.set_start_method('forkserver')
     
     commander = CommanderNode()
 
