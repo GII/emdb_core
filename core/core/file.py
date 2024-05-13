@@ -57,3 +57,25 @@ class FileGoodness(File):
             + str(self.node.n_cnodes)
             + "\n"
         )
+
+class FilePNodesSuccess(File):
+    """A file that records wether a P-node's activation has been successful or not."""
+
+    def write_header(self):
+        """Write the header of the file."""
+        super().write_header()
+        self.file_object.write("Iteration\tIdent\tSuccess\n")
+
+    def write(self):
+        """Write success."""
+        for pnode, success in self.node.pnodes_success.items():
+            if success is not None:
+                self.file_object.write(
+                    str(self.node.iteration)
+                    + "\t"
+                    + pnode
+                    + "\t"
+                    + str(success)
+                    + "\n"
+                )
+            self.node.pnodes_success[pnode] = None
