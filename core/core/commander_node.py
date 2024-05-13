@@ -65,6 +65,15 @@ class CommanderNode(Node):
 
 
     def load_config(self, request, response):
+        """
+        Loads a yaml file with the configuration of the execution nodes.
+
+        :param request: Request for loading configuration file.
+        :type request: core_interfaces.srv.LoadConfig_Request
+        :return: Response with success result of the configuration.
+        :rtype: core_interfaces.srv.LoadConfig_Response
+        """
+
         config_file= str(request.file)
 
         if not os.path.exists(config_file):
@@ -89,12 +98,14 @@ class CommanderNode(Node):
         return response
     
     def configure_services(self):
+        """
+        Generates additional services related to execution and cognitive nodes.
 
+        """
         #Spawn services related to cognitive nodes
 
-        # Move Cognitive Node Service for the User
-
         self.get_logger().info('Configuring Services')
+        # Move Cognitive Node Service for the User
         self.move_cognitive_node_service = self.create_service(
             MoveCognitiveNodeToExecutionNode,
             'commander/move_cognitive_node_to',
@@ -184,7 +195,8 @@ class CommanderNode(Node):
         Adds a new execution node to the system.
 
         This method increments the last used ID, creates a new execution node with the updated ID,
-        and returns the assigned ID in the response.
+        and returns the assigned ID in the response. The execution nodes are created using the
+        multiprocessing library. The process object is stored in the self.executors dictionary.
 
         :param request: The request to add a new execution node.
         :type request: core_interfaces.srv.AddExecutionNode_Request
