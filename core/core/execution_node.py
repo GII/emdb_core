@@ -28,7 +28,7 @@ class ExecutionNode(Node):
     It is subscribed to the topic where the commander node sends commands.
     """
 
-    def __init__(self, executor):
+    def __init__(self, executor, id):
         """
         Constructor for the ExecutionNode class.
 
@@ -36,11 +36,11 @@ class ExecutionNode(Node):
         :type executor: rclpy.executors.SingleThreadedExecutor
         """
 
-        service_name = 'commander/add_executor'
-        add_execution_node_client = ServiceClient(AddExecutionNode, service_name)
-        commander_response = add_execution_node_client.send_request()       
-        add_execution_node_client.destroy_node()
-        id = commander_response.id
+        # service_name = 'commander/add_executor'
+        # add_execution_node_client = ServiceClient(AddExecutionNode, service_name)
+        # commander_response = add_execution_node_client.send_request()       
+        # add_execution_node_client.destroy_node()
+        # id = commander_response.id
         
         super().__init__('execution_node_' + str(id))
         self.get_logger().info('Creating execution node')
@@ -359,8 +359,17 @@ class ExecutionNode(Node):
             self.get_logger().info(f'Stopping execution of execution node {self.id}')
             self.executor.shutdown()
             rclpy.shutdown()
+            
+def create_execution_node(id: int, threads: int, args=None):
+    rclpy.init(args=args)
+    if threads>1:
+        executor=MultiThreadedExecutor(num_threads=threads)
+    else:
+        executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
+    execution_node = ExecutionNode(executor, id)
+    executor.add_node(execution_node)
+    executor.spin()
 
-# single threaded executor
 def main(args=None):
     rclpy.init(args=args)
     executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
