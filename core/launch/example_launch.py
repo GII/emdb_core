@@ -24,6 +24,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         executable="commander",
         output="screen",
         arguments=["--ros-args", "--log-level", logger],
+        parameters=[{"random_seed": random_seed}],
     )
 
     ltm_node = Node(

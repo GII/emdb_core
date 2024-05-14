@@ -40,6 +40,7 @@ class CommanderNode(Node):
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.node_clients={}
+        self.random_seed = self.declare_parameter('random_seed', value = 0).get_parameter_value().integer_value
 
             
         # Add Execution Node Service for the Execution Nodes
@@ -584,9 +585,15 @@ class CommanderNode(Node):
                 experiment_data=data['Experiment']
                 name=experiment_data['name']
                 class_name=experiment_data['class_name']
+                params_dict={}
                 if experiment_data.get('parameters'):
                     params_dict=experiment_data['parameters']
                     params_dict['LTM_id']='ltm_0' #TODO Handle multiple LTMs
+                    if data['LTM'].get('Files'):
+                        params_dict['Files']=data['LTM']['Files']
+                    if data['LTM'].get('Connectors'):
+                        params_dict['Connectors']=data['LTM']['Connectors']
+                    params_dict['random_seed']=self.random_seed
                     parameters=str(params_dict)
 
                 self.get_logger().info(f"Loading {class_name} {name}...")
