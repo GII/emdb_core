@@ -136,7 +136,7 @@ Commander:
 
 **Commander configuration file**
 
-This file is stored in the [_emdb_experiments_gii_](https://github.com/GII/emdb_experiments_gii) repository (experiments/default_experiment.yaml) or in an experiments package created by oneself. Here it's possible to change the *new_executor* and *threads* param. If the *new_executor* param is True, this will indicate to the Commander node that it has to create a new and dedicated execution node for each cognitive node that is created, with the number of threads indicated (2 in this case).
+This file is stored in the [_emdb_experiments_gii_](https://github.com/GII/emdb_experiments_gii) repository (experiments/default_experiment.yaml or one created by oneself). Here it's possible to change the *new_executor* and *threads* param. If the *new_executor* param is True, this will indicate to the Commander node that it has to create a new and dedicated execution node for each cognitive node that is created, with the number of threads indicated (2 in this case).
 
 ## Execution
 
