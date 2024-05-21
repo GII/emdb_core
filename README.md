@@ -1,5 +1,5 @@
 # e-MDB Core components
-This is the repository that contains the packages that form the core of the software implementation of the e-MDB cognitive architecture developed under the PILLAR Robots project.
+This is the repository that contains the packages that form the core of the software implementation of the e-MDB cognitive architecture developed under the [PILLAR Robots project](https://pillar-robots.eu/).
 ## Table of Contents
 
 - **[Design](#design)**
@@ -7,6 +7,7 @@ This is the repository that contains the packages that form the core of the soft
 - **[Installation](#installation)**
 - **[Configurate an experiment](#configurate-an-experiment)**
 - **[Execution](#execution)**
+- **[Results](#results)**
 
 ## Design
 
@@ -37,13 +38,9 @@ This repository is dedicated to store the execution middleware (commander node +
 
 ## Dependencies
 
-These are the dependencies required to use the e-MDB cognitive architecture software:
+These are the dependencies required to use this repository of the e-MDB cognitive architecture software:
 
 - ROS 2 Humble
-- Yamlloader 1.3.2
-- Pandas 2.1.0
-- Sklearn 1.4.2
-- Tensorflow 2.15.0
 - Numpy 1.24.3
   
 Other versions could work, but the indicated ones have proven to be functional.
@@ -55,13 +52,13 @@ To install this package, it's necessary to clone this repository in a ROS worksp
 ```
 colcon build --symlink-install
 ```
-This package constitutes the execution middleware of the cognitive architecture. To get full functionality, it's required to add to the ROS workspace, at least, other packages that include the cognitive nodes, the cognitive processes, the experiment configuration and the interface that connects the architecture with a real or a simulated environment. Therefore, to use the first version of the architecture implemented by GII, these repositories need to be cloned into the workspace:
-- _emdb_cognitive_nodes_gii_. Reference implementation for the main cognitive nodes.
-- _emdb_cognitive_processes_gii_. Reference implementation for the main cognitive processes.
-- _emdb_discrete_event_simulator_gii_. Implementation of a discrete event simulator used in many experiments.
-- _emdb_experiments_gii_. Configuration files for experiments.
+This repository constitutes the execution middleware of the e-MDB cognitive architecture. To get full functionality, it's required to add to the ROS workspace, at least, other packages that include the cognitive nodes, the cognitive processes, the experiment configuration and the interface that connects the architecture with a real or a simulated environment. Therefore, to use the first version of the architecture implemented by GII, these repositories need to be cloned into the workspace:
+- [_emdb_cognitive_nodes_gii_](https://github.com/GII/emdb_cognitive_nodes_gii). Reference implementation for the main cognitive nodes.
+- [_emdb_cognitive_processes_gii_](https://github.com/GII/emdb_cognitive_processes_gii). Reference implementation for the main cognitive processes.
+- [_emdb_discrete_event_simulator_gii_](https://github.com/GII/emdb_discrete_event_simulator_gii). Implementation of a discrete event simulator used in many experiments.
+- [_emdb_experiments_gii_](https://github.com/GII/emdb_experiments_gii). Configuration files for experiments.
 
-In these packages is included an example experiment with the discrete event simulator in which the Policies, the Goal and the World Model are defined in the beginning, the objective being to create the corresponding PNodes and CNodes, which allow the Goal to be achieved effectively by the simulated robot. 
+In these respositories is included an example experiment with the discrete event simulator in which the Policies, the Goal and the World Model are defined in the beginning, the objective being to create the corresponding PNodes and CNodes, which allow the Goal to be achieved effectively by the simulated robot. 
 
 The Goal, called ObjectInBoxStandalone, consists of introducing a cylinder into a box correctly. For that, the robot can use, in a World Model called GripperAndLowFriction, the following policies:
 - Grasp object: use one of the two grippers to grasp an object
@@ -136,7 +133,7 @@ Commander:
             threads: 1
 
 ```
-
+Parameters of the created 
 ## Execution
 
 To execute the example experiment or another launch file, it's essential to source the ROS workspace:
@@ -149,8 +146,21 @@ ros2 launch core example_launch.py
 ```
 Once executed, it is possible to see the logs in the terminal, being able to follow the behavior of the experiment in real time.
 
-Executing the example experiment, will create two files by default: goodness.txt and pnodes_success.txt. In the first one, it is possible to observe important information, such as the policy executed and the reward obtained per iteration. It is possible to observe the learning process by seeing this file in real time with the following command:
+## Results
+
+Executing the example experiment, it will create two files by default: goodness.txt and pnodes_success.txt. 
+
+In the first one, it is possible to observe important information, such as the policy executed and the reward obtained per iteration. It is possible to observe the learning process by seeing this file in real time with the following command:
 ```
 tail -f goodness.txt
 ```
 In the second file, it's possible to see the activation of the PNodes and if it was a point (True) or an anti-point (False).
+
+When the execution is finished, it's possible to obtain statistics about reward and PNodes activations per 100 iterations by using the scripts available in the scripts directory of the core package (emdb_core/core/scripts):
+```
+python3 $ROS_WORKSPACE/src/emdb_core/core/scripts/generate_grouped_statistics -n 100 -f goodness.txt > goodness_grouped_statistics.csv
+
+python3 $ROS_WORKSPACE/src/emdb_core/core/scripts/generate_grouped_success_statistics -n 100 -f pnodes_success.txt > pnodes_grouped_statistics.csv
+```
+By plotting the data of these final files, it is possible to obtain a visual interpretation of the learning of the cognitive architecture.
+
