@@ -1,8 +1,3 @@
-from math import isclose
-import yaml
-import yamlloader
-
-
 class File():
     """A MDB file."""
 

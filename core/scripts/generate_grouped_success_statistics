@@ -1,0 +1,76 @@
+
+import argparse
+import sys
+import bz2
+import magic
+
+
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0)."""
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return 1
+    if val in ("n", "no", "f", "false", "off", "0"):
+        return 0
+    raise ValueError(f"invalid truth value {val}")
+
+
+def open_file(name):
+    """Open a file using its magic number to identify its contents."""
+    file_type = magic.from_file(name)
+    if "text" in file_type:
+        return open(name, encoding="utf-8")
+    if "bzip2" in file_type:
+        return bz2.open(name)
+    print("Unsupported file!!!")
+    sys.exit(1)
+
+
+def generate_grouped_statistics():
+    """Calculate several statistics using bunchs of iterations."""
+    parser = argparse.ArgumentParser(
+        description="Calculate several statistics for LTM experiments using bunchs of iterations"
+    )
+    parser.add_argument(
+        "-f", "--file", help="File with statistics for every iteration of an experiment"
+    )
+    parser.add_argument(
+        "-n",
+        "--iterations",
+        type=int,
+        help="Number of consecutive iterations used to calculate the statistics",
+    )
+    args = parser.parse_args()
+    kwargs = vars(args)
+    iterations = kwargs["iterations"]
+    frontier = iterations
+    file_name = kwargs["file"]
+    if (iterations is None) or (file_name is None):
+        parser.print_help()
+    else:
+        with open_file(file_name) as stat_file:
+            stat_file.readline()
+            pnodes_activations = {}
+            pnodes_success = {}
+            for line in stat_file:
+                iteration, pnode, success = line.split()
+                iteration = int(iteration)
+                if iteration >= frontier:
+                    for pnode, pnode_success in pnodes_success.items():
+                        print(
+                            f"{frontier}\t{pnode}\t{pnode_success}\t{pnodes_activations[pnode]}"
+                            f"\t{round(100.0 * pnode_success / pnodes_activations[pnode])}"
+                        )
+                    pnodes_activations = {}
+                    pnodes_success = {}
+                    frontier += iterations
+                if pnode not in pnodes_activations:
+                    pnodes_activations[pnode] = 0
+                    pnodes_success[pnode] = 0
+                pnodes_activations[pnode] += 1
+                if strtobool(success):
+                    pnodes_success[pnode] += 1
+
+
+if __name__ == "__main__":
+    generate_grouped_statistics()
