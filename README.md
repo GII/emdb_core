@@ -74,7 +74,7 @@ The reward obtained could be 0.2, 0.3 or 0.6 if the robot with its action improv
 
 ## Configurate an experiment
 
-There are two files that are possible to edit to configure the core of the architecture: the launch file and the commander configuration file.
+There are three files that are possible to edit to configure the core of the architecture: the launch file, the commander configuration file and the experiment configuration file.
 
 **Launch file**
 
@@ -133,6 +133,11 @@ Commander:
             threads: 1
 
 ```
+
+**Commander configuration file**
+
+This file is stored in the [_emdb_experiments_gii_](https://github.com/GII/emdb_experiments_gii) repository (experiments/default_experiment.yaml) or in an experiments package created by oneself. Here it's possible to change the *new_executor* and *threads* param. If the *new_executor* param is True, this will indicate to the Commander node that it has to create a new and dedicated execution node for each cognitive node that is created, with the number of threads indicated (2 in this case).
+
 ## Execution
 
 To execute the example experiment or another launch file, it's essential to source the ROS workspace:
