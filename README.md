@@ -133,7 +133,6 @@ Commander:
             threads: 1
 
 ```
-Parameters of the created 
 ## Execution
 
 To execute the example experiment or another launch file, it's essential to source the ROS workspace:
@@ -162,5 +161,7 @@ python3 $ROS_WORKSPACE/src/emdb_core/core/scripts/generate_grouped_statistics -n
 
 python3 $ROS_WORKSPACE/src/emdb_core/core/scripts/generate_grouped_success_statistics -n 100 -f pnodes_success.txt > pnodes_grouped_statistics.csv
 ```
+To use these scripts it's necessary to have installed python-magic 0.4.27 dependency.
+
 By plotting the data of these final files, it is possible to obtain a visual interpretation of the learning of the cognitive architecture.
 
