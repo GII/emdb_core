@@ -219,9 +219,7 @@ class LTM(Node):
         else:
             data = str(request.data)
             data_dic = yaml.load(data, Loader=yaml.FullLoader)
-            self.get_logger().info('DEBUG START: Adding node')
-            await self.add_node(node_type, name, data_dic) 
-            self.get_logger().info('DEBUG FINISH: Adding node')    
+            await self.add_node(node_type, name, data_dic)   
             self.get_logger().info(f"Added {node_type} {name}")
             response.added = True
 
@@ -459,11 +457,12 @@ def main(args=None):
     id = int(sys.argv[1])
     ltm = LTM(id)
 
-    rclpy.spin(ltm)
-    rclpy.shutdown()
-
-    ltm.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(ltm)
+    except KeyboardInterrupt:
+        print(f'Keyboard Interrupt Detected: Shutting down LTM_{id}...')
+    finally:
+        ltm.destroy_node()
 
 if __name__ == '__main__':
     main()

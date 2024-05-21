@@ -5,6 +5,7 @@ import yaml
 import importlib
 import asyncio
 
+import rclpy.logging
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 
@@ -368,43 +369,22 @@ def create_execution_node(id: int, threads: int, args=None):
         executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor, id)
     executor.add_node(execution_node)
-    executor.spin()
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        pass
+        for node in execution_node.nodes.values():
+            executor.remove_node(node)
+            node.destroy_node()
+
 
 def main(args=None):
     rclpy.init(args=args)
-    executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
-    execution_node = ExecutionNode(executor)
-    executor.add_node(execution_node)
-
-
-    executor.spin()
-    # try:
-    #     executor.spin()
-    # except KeyboardInterrupt:
-    #     pass
-
-    # for node in execution_node.nodes.values():
-    #     executor.remove_node(node)
-    #     node.destroy_node()
-
-# # multi threaded executor
-# def main(args=None):
-#     rclpy.init(args=args)
-#     id = int(sys.argv[1])
-
-#     executor = MultiThreadedExecutor(num_threads=2)
-#     execution_node = ExecutionNode(executor, id)
-    
-#     executor.add_node(execution_node)
-
-#     try:
-#         executor.spin()
-#     except KeyboardInterrupt:
-#         pass
-
-#     for name, node in execution_node.nodes.items():
-#         executor.remove_node(node)
-#         node.destroy_node()
+    rclpy.logging.get_logger("execution_node").fatal(
+        "This node is not meant to be launched by itself. It must be created by a commander node."
+    )
 
 
 if __name__ == '__main__':

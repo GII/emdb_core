@@ -208,7 +208,7 @@ class CommanderNode(Node):
         new_id = str(self.last_id)
 
         #Spawn child process with executor node
-        p=mp.Process(target=create_execution_node, args=(new_id, threads,))
+        p=mp.Process(target=create_execution_node, name=f"execution_node_{new_id}", args=(new_id, threads,))
         p.start()
         
 
@@ -887,6 +887,12 @@ class CommanderNode(Node):
             self.node_clients[service_name] = ServiceClient(StopExecution, service_name)
         executor_response = self.node_clients[service_name].send_request()
         return executor_response
+    
+    def process_shutdown(self):
+        for process in self.executors.values():
+            process.terminate()
+            process.join()
+            process.close()
 
 def main(args=None):
     rclpy.init()
@@ -896,10 +902,14 @@ def main(args=None):
     
     commander = CommanderNode()
 
-    rclpy.spin(commander)
+    try:
+        rclpy.spin(commander)
 
-    commander.destroy_node()
-    rclpy.shutdown()
+    except KeyboardInterrupt:
+        print('Keyboard Interrupt Detected: Shutting down execution nodes...')
+        commander.process_shutdown()
+    finally:
+        commander.destroy_node()
 
 if __name__ == '__main__':
     main()
