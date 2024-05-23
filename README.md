@@ -70,7 +70,7 @@ The Goal, called ObjectInBoxStandalone, consists of introducing a cylinder into 
 - Put object in box: place an object in a receptacle
 - Throw: throw an object to a position
   
-The reward obtained could be 0.2, 0.3 or 0.6 if the robot with its action improves its situation to get the final goal. Finally, when the cylinder is introduced into the box, the reward obtained is 1.0. Thus, at the end of the experiment, seven PNodes and CNodes should be created, one per policy, except Put object with robot, which doesn't lead to any reward.
+The reward obtained could be 0.2, 0.3 or 0.6 if the robot with its action improves its situation to get the final goal. Finally, when the cylinder is introduced into the box, the reward obtained is 1.0. Thus, at the end of the experiment, seven PNodes and CNodes should be created, one per policy, except _Put object with robot_, which doesn't lead to any reward.
 
 ## Configurate an experiment
 
@@ -110,7 +110,7 @@ simulator_node = Node(
     ],
 )
 ```
-Also, it's possible to configure the launch arguments such as random seed or experiment file.
+Also, it's possible to configure the launch arguments such as random_seed or experiment_file.
 
 It's important to remember that launch file names have to finish with the "launch" word, to be found after building the workspace (*_launch.py).
 
@@ -136,7 +136,7 @@ Commander:
 
 **Commander configuration file**
 
-This file is stored in the [_emdb_experiments_gii_](https://github.com/GII/emdb_experiments_gii) repository (experiments/default_experiment.yaml or one created by oneself). Here it's possible to change the *new_executor* and *threads* param. If the *new_executor* param is True, this will indicate to the Commander node that it has to create a new and dedicated execution node for each cognitive node that is created, with the number of threads indicated (2 in this case).
+This file is stored in the [_emdb_experiments_gii_](https://github.com/GII/emdb_experiments_gii) repository (experiments/default_experiment.yaml or one created by oneself). Here it's possible to change the *new_executor* and *threads* param. If the *new_executor* param is True, this will indicate to the Commander node that it has to create a new and dedicated Execution Node for each Cognitive Node that is created, with the number of threads indicated (2 in this case).
 
 ## Execution
 
@@ -154,7 +154,7 @@ Once executed, it is possible to see the logs in the terminal, being able to fol
 
 Executing the example experiment, it will create two files by default: goodness.txt and pnodes_success.txt. 
 
-In the first one, it is possible to observe important information, such as the policy executed and the reward obtained per iteration. It is possible to observe the learning process by seeing this file in real time with the following command:
+In the first one, it is possible to observe relevant information, such as the policy executed and the reward obtained per iteration. It is possible to observe the learning process by seeing this file in real time with the following command:
 ```
 tail -f goodness.txt
 ```
@@ -164,7 +164,7 @@ tail -f goodness.txt
 | 1417      | object_in_box_standalone | GRIPPER_AND_LOW_FRICTION  | 0.6    | grasp_with_two_hands  | True              | 7       |
 | 1418      | object_in_box_standalone | GRIPPER_AND_LOW_FRICTION  | 1.0    | put_object_in_box     | True              | 7       |
 
-In the second file, it's possible to see the activation of the PNodes and if it was a point (True) or an anti-point (False).
+The file pnodes_success.txt stores the activation of the PNodes and if it was a point (True) or an anti-point (False).
 
 When the execution is finished, it's possible to obtain statistics about reward and PNodes activations per 100 iterations by using the scripts available in the scripts directory of the core package (emdb_core/core/scripts):
 ```
