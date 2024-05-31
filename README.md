@@ -1,4 +1,4 @@
-# e-MDB cognitive architecture Core components
+# e-MDB cognitive architecture core components
 This is the repository that contains the packages that form the core of the software implementation of the e-MDB cognitive architecture developed under the [PILLAR Robots project](https://pillar-robots.eu/).
 ## Table of Contents
 
