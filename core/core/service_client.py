@@ -22,7 +22,7 @@ class ServiceClient(Node):
         self.cbgroup=MutuallyExclusiveCallbackGroup()
         self.cli = self.create_client(service_type, service_name, callback_group=self.cbgroup)
         while not self.cli.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Service not available, waiting again...')
+            self.get_logger().info(f'Service {service_name} not available, waiting again...')
         self.req = service_type.Request()
 
     def send_request(self, **kwargs):
@@ -46,7 +46,7 @@ class ServiceClientAsync():
         self.node=node
         self.cli = self.node.create_client(service_type, service_name, callback_group=callback_group)
         while not self.cli.wait_for_service(timeout_sec=1.0):
-            self.node.get_logger().info('Service not available, waiting again...')
+            self.node.get_logger().info(f'Service {service_name} not available, waiting again...')
         self.req = service_type.Request()
 
     def send_request_async(self, **kwargs) -> Future:
