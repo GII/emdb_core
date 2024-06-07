@@ -34,9 +34,16 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         arguments=["0", "--ros-args", "--log-level", logger],
     )
 
-    simulator_node = Node(
-        package="simulators",
-        executable="simulator",
+    oscar_perception_node = Node(
+        package="oscar_perception",
+        executable="oscar_perception_services",
+        output="screen",
+        arguments=["--ros-args", "--log-level", logger],
+    )
+
+    oscar_node = Node(
+        package="oscar_emdb",
+        executable="oscar_emdb_server",
         output="screen",
         parameters=[
             {
@@ -70,7 +77,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         shell=True,
     )
 
-    nodes_to_start = [config_service_call, core_node, ltm_node, simulator_node]
+    nodes_to_start = [config_service_call, core_node, ltm_node, oscar_node, oscar_perception_node]
 
     return nodes_to_start
 
@@ -98,7 +105,7 @@ def generate_launch_description():
     declared_arguments.append(
         DeclareLaunchArgument(
             "experiment_file",
-            default_value="default_experiment.yaml",
+            default_value="oscar_experiment.yaml",
             description="The file that loads the experiment config",
         )
     )
