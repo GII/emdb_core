@@ -1,4 +1,5 @@
 import yaml
+import inspect
 from rclpy.node import Node
 from rclpy import spin_until_future_complete
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -233,7 +234,7 @@ class CognitiveNode(Node):
         """
         self.get_logger().debug('Getting node activation...')
         perception = perception_msg_to_dict(request.perception)
-        if self.node_type in ["CNode", "Policy"]:
+        if inspect.iscoroutinefunction(self.calculate_activation):
             await self.calculate_activation(perception)
         else:
             self.calculate_activation(perception)
