@@ -5,9 +5,11 @@ import asyncio
 from rclpy.node import Node
 from std_msgs.msg import String
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.time import Time
 from rclpy import spin_until_future_complete
 
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, GetNodeFromLTM, ReplaceNodeFromLTM, SetChangesTopic
+from cognitive_node_interfaces.msg import Activation
 from cognitive_node_interfaces.srv import AddNeighbor, DeleteNeighbor
 from core.service_client import ServiceClient, ServiceClientAsync
 
@@ -41,9 +43,10 @@ class LTM(Node):
         super().__init__('ltm_' + str(id))
         self.id = id
         self.changes_topic = True
-        # TODO Remove ANode and BNode
         # TODO Create keys from config file
-        self.cognitive_nodes = {'ANode': {}, 'BNode': {}, 'CNode': {}, 'Drive': {}, 'Goal': {}, 'Need': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
+        self.cognitive_nodes = {'CNode': {}, 'Drive': {}, 'Goal': {}, 'Need': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
+        self.activation_inputs = {}
+
         
         # State topic
         self.state_publisher = self.create_publisher(
@@ -367,7 +370,7 @@ class LTM(Node):
         self.cognitive_nodes[node_type][node_name] = node_data
         node_dict={'name': node_name, 'node_type': node_type}
 
-        #TODO: Neighbor handling
+        self.create_activation_input(node_name, node_type)
 
         #If neighbors have not been assiged to the node in creation time, assign neighbors according to type
         if not node_data['neighbors']:
@@ -384,20 +387,14 @@ class LTM(Node):
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors 
 
             #Calls AddNode service of the new node to add the required neighbors in node's internal dictionary
-            for neighbor in neighbors: #TODO: Fix service calls to allow calling this method
-                self.get_logger().debug(f'AWAIT START: Adding neighbor {neighbor["name"]} to new node {node_name}')
+            for neighbor in neighbors: 
                 await self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
-                self.get_logger().debug(f'AWAIT FINISH: Adding neighbor {neighbor["name"]} to new node {node_name}')
 
 
         #Add the new node to the dictionary of the corresponding neighbors
         for neighbor in self.cognitive_nodes[node_type][node_name]['neighbors']:
             neighbor_name=neighbor['name']
-            self.get_logger().debug(f'AWAIT START: Adding new node {node_name}  as neighbor of {neighbor_name}')
             await self.add_neighbor(node_name,node_type,neighbor_name)
-            self.get_logger().debug(f'AWAIT FINISH: Adding new node {node_name}  as neighbor of {neighbor_name}')
-
-
             for neighbor_type in self.cognitive_nodes:
                 if neighbor_name in self.cognitive_nodes[neighbor_type]:
                     self.cognitive_nodes[neighbor_type][neighbor_name]['neighbors'].append(node_dict)
@@ -414,6 +411,7 @@ class LTM(Node):
         :type node_name: str
         """
         del self.cognitive_nodes[node_type][node_name]
+        self.delete_activation_input(node_name)
         self.publish_state()
 
 
@@ -451,6 +449,27 @@ class LTM(Node):
             self.node_clients[service_name]=ServiceClientAsync(self, AddNeighbor, service_name, callback_group=self.cbgroup_client)
         result = await self.node_clients[service_name].send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
         return result
+    
+    def create_activation_input(self, name, node_type): #Adds a node from the activation inputs list.
+        if name not in self.activation_inputs:
+            subscriber=self.create_subscription(Activation, 'cognitive_node/' + str(name) + '/activation', self.read_activation_callback, 1, callback_group=self.cbgroup_server)
+            self.activation_inputs[name]=subscriber
+            self.get_logger().debug(f'{self.id} -- Created new activation input: {name} of type {node_type}')
+        else:
+            self.get_logger().error(f'{self.id} -- Tried to add {name} to activation inputs more than once')
+    
+    def delete_activation_input(self, name): #Deletes a node from the activation inputs list. By default reads activations.
+        if name in self.activation_inputs:
+            self.destroy_subscription(self.activation_inputs[name])
+            self.activation_inputs.pop(name)
+
+    def read_activation_callback(self, msg: Activation):
+        node_name=msg.node_name
+        node_type=msg.node_type
+        activation=msg.activation
+        timestamp=Time.from_msg(msg.timestamp).nanoseconds
+        self.cognitive_nodes[node_type][node_name]['activation']=activation
+        self.cognitive_nodes[node_type][node_name]['activation_timestamp']=timestamp
 
 def main(args=None):
     rclpy.init()

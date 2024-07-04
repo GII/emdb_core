@@ -148,7 +148,7 @@ class CognitiveNode(Node):
         """
         self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
         
-        data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'perception': self.perception, 'neighbors': self.neighbors})
+        data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors})
 
         ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
         await ltm_response
@@ -336,10 +336,9 @@ class CognitiveNode(Node):
                 updated=False
                 new_input=dict(subscriber=subscriber, data=data, updated=updated)
                 self.activation_inputs[name]=new_input
-                self.get_logger().info(f'{self.name} -- Created new activation input: {name} of type {node_type}')
-                self.get_logger().info(f'PRUEBA {self.name} -- {str(self.activation_inputs)}')
+                self.get_logger().debug(f'{self.name} -- Created new activation input: {name} of type {node_type}')
             else:
-                self.get_logger().info(f'{self.name} -- Node {name} of type {node_type} is not an activation source')
+                self.get_logger().debug(f'{self.name} -- Node {name} of type {node_type} is not an activation source')
         else:
             self.get_logger().error(f'{self.name} -- Tried to add {name} to activation inputs more than once')
     
