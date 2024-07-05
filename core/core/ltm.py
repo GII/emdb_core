@@ -295,7 +295,7 @@ class LTM(Node):
         response.deleted = False
         return response
     
-    def get_node_callback(self, request, response):
+    async def get_node_callback(self, request, response):
         """
         Callback function for the 'get_node' service.
         Retrieves data of a specific cognitive node from the LTM.
@@ -314,10 +314,14 @@ class LTM(Node):
         name = str(request.name)
 
         if name == "": #Return dict with all nodes if empty string is passed
+            #Wait for all flags to be set
+            updated = self.check_activations()
+            
             data_dic = self.cognitive_nodes
             data= yaml.dump(data_dic)
-            self.get_logger().info(f"Sending all nodes in LTM: {self.id}")
+            self.get_logger().info(f"Sending all nodes in LTM: {self.id}, updated: {updated}")
             response.data=data
+            response.updated=updated
             return response
 
         else:
@@ -331,6 +335,23 @@ class LTM(Node):
             self.get_logger().info(f"{node_type} {name} doesn't exist.")
             response.data = ""
             return response
+    
+    def check_activations(self):
+        self.get_logger().info('Checking if activations are updated')
+            # Check if all flags are True
+        all_flags_true = all(input['flag'] for input in self.activation_inputs.values())
+
+        self.get_logger().info(f'DEBUG: {self.activation_inputs}')
+        
+        if all_flags_true:
+            # Set all flags to False
+            for input in self.activation_inputs.values():
+                input['flag'] = False
+            return True
+        
+        return False
+
+
     
     def set_changes_topic_callback(self, request, response):
         """
@@ -453,10 +474,11 @@ class LTM(Node):
     def create_activation_input(self, name, node_type): #Adds a node from the activation inputs list.
         if name not in self.activation_inputs:
             subscriber=self.create_subscription(Activation, 'cognitive_node/' + str(name) + '/activation', self.read_activation_callback, 1, callback_group=self.cbgroup_server)
-            self.activation_inputs[name]=subscriber
-            self.get_logger().debug(f'{self.id} -- Created new activation input: {name} of type {node_type}')
+            flag=False
+            self.activation_inputs[name]=dict(subscriber=subscriber, flag=flag)
+            self.get_logger().debug(f'Created new activation input: {name} of type {node_type}')
         else:
-            self.get_logger().error(f'{self.id} -- Tried to add {name} to activation inputs more than once')
+            self.get_logger().error(f'Tried to add {name} to activation inputs more than once')
     
     def delete_activation_input(self, name): #Deletes a node from the activation inputs list. By default reads activations.
         if name in self.activation_inputs:
@@ -468,8 +490,14 @@ class LTM(Node):
         node_type=msg.node_type
         activation=msg.activation
         timestamp=Time.from_msg(msg.timestamp).nanoseconds
+        old_timestamp=self.cognitive_nodes[node_type][node_name]['activation_timestamp']
         self.cognitive_nodes[node_type][node_name]['activation']=activation
         self.cognitive_nodes[node_type][node_name]['activation_timestamp']=timestamp
+        
+        if timestamp > old_timestamp:
+            self.cognitive_nodes[node_type][node_name]['activation']=activation
+            self.cognitive_nodes[node_type][node_name]['activation_timestamp']=timestamp
+            self.activation_inputs[node_name]['flag']=True
 
 def main(args=None):
     rclpy.init()

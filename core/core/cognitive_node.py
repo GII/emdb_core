@@ -102,7 +102,7 @@ class CognitiveNode(Node):
             self.delete_neighbor_callback, callback_group=self.cbgroup_server
         )
 
-        self.activation_publish_timer=self.create_timer(0.1, self.publish_activation_callback, callback_group=self.cbgroup_activation)
+        self.activation_publish_timer=self.create_timer(0.01, self.publish_activation_callback, callback_group=self.cbgroup_activation)
 
         service_name_add_LTM = 'ltm_0' + '/add_node' # TODO choose LTM ID
         self.add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name_add_LTM, self.cbgroup_client)
@@ -180,7 +180,7 @@ class CognitiveNode(Node):
         if len(node_activations)!=0:
             activation=numpy.prod(node_activations)
         else:
-            self.get_logger().debug(f'{self.name} -- Node activation list empty!!')
+            self.get_logger().debug(f'Node activation list empty!!')
             activation=0.0
         self.activation.activation=float(activation)
         self.activation.timestamp=self.get_clock().now().to_msg()
@@ -190,7 +190,7 @@ class CognitiveNode(Node):
         if len(node_activations)!=0:
             activation=numpy.max(node_activations)
         else:
-            self.get_logger().debug(f'{self.name} -- Node activation list empty!!')
+            self.get_logger().debug(f'Node activation list empty!!')
             activation=0
         self.activation.activation=float(activation)
         self.activation.timestamp=self.get_clock().now().to_msg()
@@ -314,7 +314,7 @@ class CognitiveNode(Node):
             if len(self.activation_inputs)==0: #Calculates activation when there are no inputs configured (Support for custom nodes)
                 updated=True
             else:
-                self.get_logger().debug(f'{self.name} -- Activation Inputs: {str(self.activation_inputs)}')
+                self.get_logger().debug(f'Activation Inputs: {str(self.activation_inputs)}')
                 updated= all((self.activation_inputs[node_name]['updated'] for node_name in self.activation_inputs)) 
 
             if updated:
@@ -336,11 +336,11 @@ class CognitiveNode(Node):
                 updated=False
                 new_input=dict(subscriber=subscriber, data=data, updated=updated)
                 self.activation_inputs[name]=new_input
-                self.get_logger().debug(f'{self.name} -- Created new activation input: {name} of type {node_type}')
+                self.get_logger().debug(f'Created new activation input: {name} of type {node_type}')
             else:
-                self.get_logger().debug(f'{self.name} -- Node {name} of type {node_type} is not an activation source')
+                self.get_logger().debug(f'Node {name} of type {node_type} is not an activation source')
         else:
-            self.get_logger().error(f'{self.name} -- Tried to add {name} to activation inputs more than once')
+            self.get_logger().error(f'Tried to add {name} to activation inputs more than once')
     
     def delete_activation_input(self, node: dict): #Deletes a node from the activation inputs list. By default reads activations.
         name=node['name']
@@ -359,7 +359,7 @@ class CognitiveNode(Node):
                 self.activation_inputs[node_name]['data']=msg
                 self.activation_inputs[node_name]['updated']=True
             elif Time.from_msg(msg.timestamp).nanoseconds<Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds:
-                self.get_logger().warn(f'{self.name} -- Detected jump back in time, activation of node: {node_name} ({msg.node_type})')
+                self.get_logger().warn(f'Detected jump back in time, activation of node: {node_name} ({msg.node_type})')
         
     def __str__(self):
         """

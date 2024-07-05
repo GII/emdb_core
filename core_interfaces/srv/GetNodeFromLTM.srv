@@ -1,3 +1,4 @@
 string name
 ---
+bool updated
 string data
