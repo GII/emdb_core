@@ -71,7 +71,7 @@ class CognitiveNode(Node):
         self.get_activation_service = self.create_service(
             GetActivation,
             'cognitive_node/' + str(name) + '/get_activation',
-            self.get_activation_callback, callback_group=self.cbgroup_server
+            self.get_activation_callback, callback_group=self.cbgroup_activation
         )
         
         # Get Information Service

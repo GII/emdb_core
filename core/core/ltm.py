@@ -312,10 +312,11 @@ class LTM(Node):
         :rtype: GetNodeFromLTM_Response
         """        
         name = str(request.name)
+        timestamp = Time.from_msg(request.timestamp).nanoseconds
 
         if name == "": #Return dict with all nodes if empty string is passed
             #Wait for all flags to be set
-            updated = self.check_activations()
+            updated = self.check_activations(timestamp=timestamp)
             
             data_dic = self.cognitive_nodes
             data= yaml.dump(data_dic)
@@ -336,12 +337,15 @@ class LTM(Node):
             response.data = ""
             return response
     
-    def check_activations(self):
+    def check_activations(self, timestamp=0):
         self.get_logger().info('Checking if activations are updated')
             # Check if all flags are True
-        all_flags_true = all(input['flag'] for input in self.activation_inputs.values())
+        if not timestamp:
+            all_flags_true = all(input['flag'] for input in self.activation_inputs.values())
+        else:
+            all_flags_true = all(self.cognitive_nodes[input['node_type']][name]['activation_timestamp']>timestamp for name, input in self.activation_inputs.items())
 
-        self.get_logger().info(f'DEBUG: {self.activation_inputs}')
+        self.get_logger().debug(f'DEBUG: {self.activation_inputs}')
         
         if all_flags_true:
             # Set all flags to False
@@ -475,7 +479,7 @@ class LTM(Node):
         if name not in self.activation_inputs:
             subscriber=self.create_subscription(Activation, 'cognitive_node/' + str(name) + '/activation', self.read_activation_callback, 1, callback_group=self.cbgroup_server)
             flag=False
-            self.activation_inputs[name]=dict(subscriber=subscriber, flag=flag)
+            self.activation_inputs[name]=dict(node_type=node_type, subscriber=subscriber, flag=flag)
             self.get_logger().debug(f'Created new activation input: {name} of type {node_type}')
         else:
             self.get_logger().error(f'Tried to add {name} to activation inputs more than once')

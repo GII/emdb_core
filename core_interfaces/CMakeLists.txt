@@ -11,6 +11,7 @@ find_package(ament_cmake REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ControlMsg.msg"
@@ -31,7 +32,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SendToCommander.srv"
   "srv/SendToExecutor.srv"
   "srv/SetChangesTopic.srv"
-  "srv/StopExecution.srv"  
+  "srv/StopExecution.srv"
+  DEPENDENCIES builtin_interfaces  
 )
 
 if(BUILD_TESTING)
