@@ -217,10 +217,10 @@ class CognitiveNode(Node):
         :rtype: cognitive_node_interfaces.srv.AddNeighbor_Response
         """
         
-        name = request.neighbor_name
-        type = request.neighbor_type
-        self.get_logger().debug(f'Adding {type} {name} as neighbor of {self.node_type} {self.name}')
-        neighbor = {'name':name, 'node_type':type}
+        node_name = request.neighbor_name
+        node_type = request.neighbor_type
+        self.get_logger().debug(f'Adding {node_type} {node_name} as neighbor of {self.node_type} {self.name}')
+        neighbor = {'name':node_name, 'node_type':node_type}
         self.neighbors.append(neighbor)
         self.create_activation_input(neighbor)
         response.added = True
@@ -237,9 +237,9 @@ class CognitiveNode(Node):
         :return: The response that indicates if the neighbor was deleted
         :rtype: cognitive_node_interfaces.srv.DeleteNeighbor_Response
         """
-        name = request.neighbor_name
-        type = request.neighbor_type
-        neighbor_to_delete = {'name':name, 'node_type':type}
+        node_name = request.neighbor_name
+        node_type = request.neighbor_type
+        neighbor_to_delete = {'name':node_name, 'node_type':node_type}
 
         for neighbor in self.neighbors:
             if neighbor == neighbor_to_delete:
@@ -345,7 +345,7 @@ class CognitiveNode(Node):
     def delete_activation_input(self, node: dict): #Deletes a node from the activation inputs list. By default reads activations.
         name=node['name']
         if name in self.activation_inputs:
-            self.destroy_subscription(self.activation_inputs[node]['subscription'])
+            self.destroy_subscription(self.activation_inputs[name]['subscription'])
             self.activation_inputs.pop(name)
     
     def configure_activation_inputs(self, neighbor_list):
