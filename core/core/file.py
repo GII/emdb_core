@@ -31,19 +31,19 @@ class FileGoodness(File):
         """Write the header of the file."""
         super().write_header()
         self.file_object.write(
-            "Iteration\tGoal\tWorld\tReward\tPolicy\tSensorial changes\tC-nodes\n"
+            "Iteration\tWorld\tGoal reward list\tPolicy\tSensorial changes\tC-nodes\n"
         )
 
     def write(self):
         """Write statistics data."""
+        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in self.node.stm.reward.items()}
+
         self.file_object.write(
             str(self.node.iteration)
             + "\t"
-            + (self.node.current_goal if self.node.current_goal else "None")
-            + "\t"
             + self.node.current_world
             + "\t"
-            + str(f"{self.node.current_reward:.1f}")
+            + str(f"{formatted_goals}")
             + "\t"
             + self.node.current_policy
             + "\t\t"
@@ -52,6 +52,8 @@ class FileGoodness(File):
             + str(self.node.n_cnodes)
             + "\n"
         )
+
+        
 
 class FilePNodesSuccess(File):
     """A file that records wether a P-node's activation has been successful or not."""
