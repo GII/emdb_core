@@ -112,16 +112,17 @@ class FileNodeActivations(File):
                 self.node_subscriptions.append(node['name'])
 
     def receive_activation_callback(self, msg: Activation):
-        self.file_object.write(
-            str(Time.from_msg(msg.timestamp).nanoseconds)
-            + "\t"
-            + msg.node_name
-            + "\t"
-            + msg.node_type
-            + "\t"
-            + str(msg.activation)
-            + "\n"
-        )
+        if not self.file_object.closed:
+            self.file_object.write(
+                str(Time.from_msg(msg.timestamp).nanoseconds)
+                + "\t"
+                + msg.node_name
+                + "\t"
+                + msg.node_type
+                + "\t"
+                + str(msg.activation)
+                + "\n"
+            )
 
     def write(self):
         self.check_subscriptions()
