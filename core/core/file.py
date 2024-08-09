@@ -113,14 +113,16 @@ class FileNodeActivations(File):
 
     def receive_activation_callback(self, msg: Activation):
         if not self.file_object.closed:
+            timestamp = Time.from_msg(msg.timestamp).seconds_nanoseconds()
+
             self.file_object.write(
-                str(Time.from_msg(msg.timestamp).nanoseconds)
+                f"{(timestamp[0] + timestamp[1]*1e-9):.3f}"
                 + "\t"
                 + msg.node_name
                 + "\t"
                 + msg.node_type
                 + "\t"
-                + str(msg.activation)
+                + f"{msg.activation:.2f}"
                 + "\n"
             )
 
