@@ -1,0 +1,141 @@
+import pandas as pd
+import ast
+import matplotlib.pyplot as plt
+import magic
+import sys
+import bz2
+import argparse
+
+def open_file(name):
+    """Open a file using its magic number to identify its contents."""
+    file_type = magic.from_file(name)
+    if "text" in file_type:
+        return open(name, encoding="utf-8")
+    if "bzip2" in file_type:
+        return bz2.open(name)
+    print("Unsupported file!!!")
+    sys.exit(1)
+
+def obtain_rewards_dict(file):
+    """Read the goal rewards from goodness files"""
+    f = open_file(file)
+
+    dataset = pd.read_csv(f, delimiter='\t', header=0)
+
+    rewards_str = dataset["Goal reward list"].to_list()
+    rewards = [ast.literal_eval(goal) for goal in rewards_str]
+
+
+    rewards_dataset = pd.DataFrame(rewards)
+
+    iterations = dataset["Iteration"].to_list()
+    changes = dataset["Sensorial changes"].to_list()
+    rewards_per_goal = rewards_dataset.to_dict(orient = 'list')
+    
+    return iterations, rewards_per_goal, changes
+
+
+def generate_grouped_statistics(goal_name, iterations, rewards, changes, max_ite):
+    """Calculate goals statistics using bunchs of iterations."""
+    data = []
+    accumulated_reward = 0.0
+    no_change_iterations = 0
+    rewarded_iterations = 0
+    
+    if len(iterations) != len(rewards) or len(rewards) != len(changes):
+        print("Error. ")
+
+    for i in range(len(iterations)):
+        iteration = int(iterations[i])
+        reward = float(rewards[i])
+        change = int(changes[i])
+        accumulated_reward += reward
+        if not change:
+            no_change_iterations+=1
+        if reward > 0.01:
+            rewarded_iterations+=1
+
+        if iteration % max_ite == 0 and iteration > 0:
+            data.append({
+                "Iteration":iteration,
+                "Avg_reward":accumulated_reward/max_ite*100,
+                "NoChange_Iterations":no_change_iterations,
+                "Rewarded_Iterations":rewarded_iterations
+            })
+
+            accumulated_reward = 0.0
+            no_change_iterations = 0
+            rewarded_iterations = 0
+
+    df = pd.DataFrame(data)
+    df.to_csv(f"{goal_name}_goodness", sep = "\t", index=False)
+
+    data_to_plot = df.to_dict(orient="list")
+    return data_to_plot
+
+def plot_data(all_data, max_ite):
+    """Plot the generated statistics."""
+    for data_dict in all_data:
+        for data in data_dict.values():
+            goal_name = list(data_dict.keys())[0]
+            plt.figure(figsize=(16,10))
+            plt.title(goal_name, fontsize = 18)
+            plt.xlabel("Iterations", fontsize = 15)
+            plt.ylabel("% Success", fontsize = 15)
+            plt.xlim(0,data["Iteration"][-1])
+            plt.ylim(-2,100)
+            plt.yticks(range(0, 101, 10))
+            plt.tick_params(labelsize = 12)
+            plt.plot(data["Iteration"], data["Avg_reward"], label = goal_name)
+            plt.legend(loc="center right", fontsize = 15)
+            plt.grid(linewidth = 0.3)
+            plt.savefig(f"{goal_name}_n{max_ite}.svg")
+            plt.show()
+
+    plt.figure(figsize=(16,10))
+    plt.title("All goals", fontsize = 18)
+    plt.xlabel("Iterations", fontsize = 15)
+    plt.ylabel("% Success", fontsize = 15)
+    plt.xlim(0,data["Iteration"][-1])
+    plt.ylim(-2,100)
+    plt.yticks(range(0, 101, 10))
+    plt.tick_params(labelsize = 12)
+    for data_dict in all_data:
+        for data in data_dict.values():
+            goal_name = list(data_dict.keys())[0]
+            plt.plot(data["Iteration"], data["Avg_reward"], label = goal_name)
+    plt.legend(loc="center right", fontsize = 15)
+    plt.grid(linewidth = 0.3)
+    plt.savefig(f"all_goals_n{max_ite}.svg")
+    plt.show()
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Calculate several statistics for LTM experiments using bunchs of iterations"
+    )
+    parser.add_argument(
+        "-f", "--file", help="File with statistics for every iteration of an experiment"
+    )
+    parser.add_argument(
+        "-n",
+        "--iterations",
+        type=int,
+        help="Number of consecutive iterations used to calculate the statistics",
+    )
+    args = parser.parse_args()
+    kwargs = vars(args)
+    file_name = kwargs["file"]
+    max_ite = kwargs["iterations"]
+
+    all_data_to_plot = []
+    iterations, rewards_per_goal, changes = obtain_rewards_dict(file_name)
+    for goal in rewards_per_goal:
+        data_to_plot = generate_grouped_statistics(goal, iterations, rewards_per_goal[goal], changes, max_ite)
+        data_to_plot_dict = {goal:data_to_plot}
+        all_data_to_plot.append(data_to_plot_dict)
+
+    plot_data(all_data_to_plot, max_ite)
+        
+        
+if __name__ == "__main__":
+    main()
