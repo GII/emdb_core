@@ -16,6 +16,15 @@ def open_file(name):
     print("Unsupported file!!!")
     sys.exit(1)
 
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0)."""
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    if val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    raise ValueError(f"invalid truth value {val}")
+
 def obtain_rewards_dict(file):
     """Read the goal rewards from goodness files"""
     f = open_file(file)
@@ -73,7 +82,7 @@ def generate_grouped_statistics(goal_name, iterations, rewards, changes, max_ite
     data_to_plot = df.to_dict(orient="list")
     return data_to_plot
 
-def plot_data(all_data, max_ite):
+def plot_data(all_data, max_ite, show_figures):
     """Plot the generated statistics."""
     for data_dict in all_data:
         for data in data_dict.values():
@@ -83,6 +92,7 @@ def plot_data(all_data, max_ite):
             plt.xlabel("Iterations", fontsize = 15)
             plt.ylabel("% Success", fontsize = 15)
             plt.xlim(0,data["Iteration"][-1])
+            plt.xticks(range(0, data["Iteration"][-1]+1, 1000))
             plt.ylim(-2,100)
             plt.yticks(range(0, 101, 10))
             plt.tick_params(labelsize = 12)
@@ -90,13 +100,15 @@ def plot_data(all_data, max_ite):
             plt.legend(loc="center right", fontsize = 15)
             plt.grid(linewidth = 0.3)
             plt.savefig(f"{goal_name}_n{max_ite}.svg")
-            plt.show()
+            if show_figures:
+                plt.show()
 
     plt.figure(figsize=(16,10))
     plt.title("All goals", fontsize = 18)
     plt.xlabel("Iterations", fontsize = 15)
     plt.ylabel("% Success", fontsize = 15)
     plt.xlim(0,data["Iteration"][-1])
+    plt.xticks(range(0, data["Iteration"][-1]+1, 1000))
     plt.ylim(-2,100)
     plt.yticks(range(0, 101, 10))
     plt.tick_params(labelsize = 12)
@@ -107,7 +119,8 @@ def plot_data(all_data, max_ite):
     plt.legend(loc="center right", fontsize = 15)
     plt.grid(linewidth = 0.3)
     plt.savefig(f"all_goals_n{max_ite}.svg")
-    plt.show()
+    if show_figures:
+        plt.show()
 
 def main():
     parser = argparse.ArgumentParser(
@@ -122,10 +135,18 @@ def main():
         type=int,
         help="Number of consecutive iterations used to calculate the statistics",
     )
+    parser.add_argument(
+        "-s",
+        "--show_figures",
+        default = "true",
+        help="Select if the user wants to show the figures after execution"
+    )
+
     args = parser.parse_args()
     kwargs = vars(args)
     file_name = kwargs["file"]
     max_ite = kwargs["iterations"]
+    show_figures = strtobool(kwargs["show_figures"])
 
     all_data_to_plot = []
     iterations, rewards_per_goal, changes = obtain_rewards_dict(file_name)
@@ -134,7 +155,7 @@ def main():
         data_to_plot_dict = {goal:data_to_plot}
         all_data_to_plot.append(data_to_plot_dict)
 
-    plot_data(all_data_to_plot, max_ite)
+    plot_data(all_data_to_plot, max_ite, show_figures)
         
         
 if __name__ == "__main__":
