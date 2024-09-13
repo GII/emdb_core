@@ -1,5 +1,3 @@
 string name
-builtin_interfaces/Time timestamp
 ---
-bool updated
 string data

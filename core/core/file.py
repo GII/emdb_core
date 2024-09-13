@@ -52,7 +52,7 @@ class FileGoodness(File):
             + str(f"{formatted_goals}")
             + "\t"
             + self.node.current_policy
-            + "\t\t"
+            + "\t"
             + str(self.node.sensorial_changes_val)
             + "\t"
             + str(self.node.n_cnodes)
