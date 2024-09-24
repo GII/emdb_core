@@ -21,6 +21,13 @@ class ActivatedDummyPNode(PNode):
         """
         super().__init__(name, class_name, space_class, space, **params)
 
+    def send_pnode_space_callback(self, request, response):
+        response.labels = []
+        response.data = []
+        response.confidences = []
+
+        return response
+
     def calculate_activation(self, perception=None, activation_list=None):
         """
         Always returns an activation of 1.0

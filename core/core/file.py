@@ -1,8 +1,10 @@
 from rclpy.time import Time
 
+from core.service_client import ServiceClient
 from cognitive_node_interfaces.msg import Activation
+from cognitive_node_interfaces.srv import SendPNodeSpace
 from cognitive_processes_interfaces.msg import Episode
-from core.utils import perception_msg_to_dict
+from core.utils import perception_msg_to_dict, separate_perceptions
 
 class File():
     """A MDB file."""
@@ -83,52 +85,70 @@ class FilePNodesSuccess(File):
                 )
             self.node.pnodes_success[pnode] = None
 
-
-class FileNodeActivations(File):
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.node_subscriptions = []
-        self.write_header()
-        self.check_subscriptions()
-
+class FilePNodesContent(File):
     def write_header(self):
-        """Write the header of the file."""
         super().write_header()
-        self.file_object.write(
-            "Timestamp\tNode name\tNode type\tActivation\n"
-        )
+        self.file_object.write("Iteration\tIdent\t")
+        self.header_finished = False
+        self.created_clients = {}
+        self.ite = 100
 
-    def check_subscriptions(self):
-        for node in self.node.LTM_cache:
-            if node['name'] not in self.node_subscriptions:
-                subscriber = self.node.create_subscription(
-                Activation,
-                'cognitive_node/' + str(node['name']) + '/activation',
-                self.receive_activation_callback,
-                1,
-                callback_group=self.node.cbgroup_loop
-                )
-                self.node_subscriptions.append(node['name'])
+    def create_pnode_client(self, pnode_name):
+        if pnode_name not in self.created_clients:
+            pnode_client = ServiceClient(SendPNodeSpace, 'pnode/' + str(pnode_name) + '/send_pnode_space')
+            self.created_clients[pnode_name] = pnode_client
 
-    def receive_activation_callback(self, msg: Activation):
-        if not self.file_object.closed:
-            timestamp = Time.from_msg(msg.timestamp).seconds_nanoseconds()
-
-            self.file_object.write(
-                f"{(timestamp[0] + timestamp[1]*1e-9):.3f}"
-                + "\t"
-                + msg.node_name
-                + "\t"
-                + msg.node_type
-                + "\t"
-                + f"{msg.activation:.2f}"
-                + "\n"
-            )
+    def finish_header(self, labels):
+        for label in labels:
+            self.file_object.write(f"{label}\t")
+        self.file_object.write("Confidence\n")
+        self.header_finished = True
+        self.labels = labels
 
     def write(self):
-        self.check_subscriptions()
+        if "PNode" in self.node.LTM_cache and self.node.iteration % 100 == 0:
+            for pnode in self.node.LTM_cache["PNode"]:
+                if pnode not in self.created_clients:
+                    self.create_pnode_client(pnode)
 
+                if self.created_clients[pnode]:
+                    response = self.created_clients[pnode].send_request()
+
+                    labels = response.labels
+
+                    if labels:
+                        if not self.header_finished:
+                            self.finish_header(labels)
+                        
+                        if labels == self.labels:
+                            data = response.data
+                            confidences = response.confidences
+
+                            j = 0
+                            for confidence in confidences:
+                                self.file_object.write(str(self.ite) + "\t")
+                                self.file_object.write(pnode + "\t")
+
+                                for i in range(j, len(labels)+j):
+                                    self.file_object.write(str(data[i]) + "\t")
+                                self.file_object.write(str(confidence) + "\n")
+                                j = j + len(labels)
+
+                        else:
+                            self.file_object.write("ERROR. LABELS NOT MATCH BETWEEN PNODES\n")
+                    
+                    else:
+                        self.created_clients[pnode] = None
+                
+            self.ite = self.ite + 100
+
+
+
+
+
+                
+
+                    
 # WORK IN PROGRESS
 
 # class FilesEpisodes(File):
