@@ -1,4 +1,5 @@
 from rclpy.time import Time
+import os
 
 from core.service_client import ServiceClient
 from cognitive_node_interfaces.msg import Activation
@@ -25,7 +26,14 @@ class File():
 
     def write_header(self):
         """Write the header of the file."""
-        self.file_object = open(self.file_name, "a", encoding="utf-8")
+
+        name, extension = os.path.splitext(self.file_name)
+        i = 0
+        while os.path.exists(f"{name}_{i}{extension}"):
+            i = i + 1
+
+        file_name_def = name + "_" + str(i) + extension
+        self.file_object = open(file_name_def, "a", encoding="utf-8")
 
     def close(self):
         """Close de underlying file."""

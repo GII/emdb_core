@@ -1,0 +1,95 @@
+import argparse
+import sys
+import bz2
+import magic
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn
+import os
+
+
+def open_file(name):
+    """Open a file using its magic number to identify its contents."""
+    file_type = magic.from_file(name)
+    if "text" in file_type:
+        return open(name, encoding="utf-8")
+    if "bzip2" in file_type:
+        return bz2.open(name)
+    print("Unsupported file!!!")
+    sys.exit(1)
+
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0)."""
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    if val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    raise ValueError(f"invalid truth value {val}")
+
+def generate_names(input_file):
+    i = 0
+    name, extension = os.path.splitext(input_file)
+    name_list = name.split("_")
+    title = "_".join(name_list[:-2])
+    while os.path.exists(f"{title}_{i}.svg"):
+        i = i + 1
+    image_name = f"{title}_{i}.svg"
+    return title, image_name
+
+def goodness_average():
+    """Merge goodness files."""
+    parser = argparse.ArgumentParser(description="Merge goodness files")
+    parser.add_argument(
+        "-f",
+        "--files",
+        help="Files to create the figure"
+    )
+    parser.add_argument(
+        "-s",
+        "--show_figure",
+        default = "true",
+        help="Select if the user wants to show the figure after execution"
+    )
+    parser.add_argument("files", nargs="+", help="File names to merge")
+    args = parser.parse_args()
+    kwargs = vars(args)
+    files = kwargs['files']
+    show_figures = strtobool(kwargs["show_figure"])
+    iterations = []
+    rewards = []
+
+    for file_name in files:
+        df = pd.read_csv(file_name, sep='\t', header = 0)
+        iterations.extend(df['Iteration'].to_list())
+        rewards.extend(df['Avg_reward'].to_list())
+        
+    title, image_name = generate_names(files[0])
+
+    data = {
+        'Iterations':iterations,
+        'Rewards':rewards
+    }
+
+    plt.figure(figsize=(16,10))
+    seaborn.lineplot(data=data, x="Iterations", y="Rewards")
+    plt.title(title, fontsize = 18)
+    plt.ylim(0, 100)
+    plt.yticks(range(0, 101, 10))
+    plt.xlim(0, max(data['Iterations']))
+    plt.xticks(range(0, max(data['Iterations'])+1, 1000))
+    plt.tick_params(labelsize = 12)
+    plt.xlabel("Iterations", fontsize = 15)
+    plt.ylabel("% Success", fontsize = 15)
+    plt.grid(linewidth = 0.2, color = 'gray')
+
+    for spine in plt.gca().spines.values():
+        spine.set_edgecolor('black')
+
+    plt.savefig(image_name)
+
+    if show_figures:
+        plt.show()
+
+if __name__ == "__main__":
+    goodness_average()

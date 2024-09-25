@@ -5,6 +5,7 @@ import magic
 import sys
 import bz2
 import argparse
+import os
 
 def open_file(name):
     """Open a file using its magic number to identify its contents."""
@@ -15,6 +16,15 @@ def open_file(name):
         return bz2.open(name)
     print("Unsupported file!!!")
     sys.exit(1)
+
+def file_number(file):
+    i = 0
+    name, extension = os.path.splitext(file)
+    while os.path.exists(name + "_" + str(i) + extension):
+        i = i + 1
+
+    def_file_name = name + "_" + str(i) + extension
+    return def_file_name
 
 def strtobool(val):
     """Convert a string representation of truth to true (1) or false (0)."""
@@ -52,7 +62,7 @@ def generate_grouped_statistics(goal_name, iterations, rewards, changes, max_ite
     rewarded_iterations = 0
     
     if len(iterations) != len(rewards) or len(rewards) != len(changes):
-        print("Error. ")
+        raise ValueError("Error. Dimensions do not match")
 
     for i in range(len(iterations)):
         iteration = int(iterations[i])
@@ -77,7 +87,9 @@ def generate_grouped_statistics(goal_name, iterations, rewards, changes, max_ite
             rewarded_iterations = 0
 
     df = pd.DataFrame(data)
-    df.to_csv(f"{goal_name}_goodness", sep = "\t", index=False)
+    file_name = f"{goal_name}_goodness.csv"
+    def_file_name = file_number(file_name)
+    df.to_csv(def_file_name, sep = "\t", index=False)
 
     data_to_plot = df.to_dict(orient="list")
     return data_to_plot
@@ -99,7 +111,9 @@ def plot_data(all_data, max_ite, show_figures):
             plt.plot(data["Iteration"], data["Avg_reward"], label = goal_name)
             plt.legend(loc="center right", fontsize = 15)
             plt.grid(linewidth = 0.3)
-            plt.savefig(f"{goal_name}_n{max_ite}.svg")
+            img_name = f"{goal_name}_n{max_ite}.svg"
+            def_img_name = file_number(img_name)
+            plt.savefig(def_img_name)
             if show_figures:
                 plt.show()
 
@@ -118,7 +132,9 @@ def plot_data(all_data, max_ite, show_figures):
             plt.plot(data["Iteration"], data["Avg_reward"], label = goal_name)
     plt.legend(loc="center right", fontsize = 15)
     plt.grid(linewidth = 0.3)
-    plt.savefig(f"all_goals_n{max_ite}.svg")
+    img_name = f"all_goals_n{max_ite}.svg"
+    def_img_name = file_number(img_name)
+    plt.savefig(def_img_name)
     if show_figures:
         plt.show()
 
@@ -135,6 +151,14 @@ def main():
         type=int,
         help="Number of consecutive iterations used to calculate the statistics",
     )
+
+    parser.add_argument(
+        "-fg",
+        "--figures",
+        default = "true",
+        help="Select if the user wants to generate figures or only the output files"
+    )
+
     parser.add_argument(
         "-s",
         "--show_figures",
@@ -142,12 +166,14 @@ def main():
         help="Select if the user wants to show the figures after execution"
     )
 
+
     args = parser.parse_args()
     kwargs = vars(args)
     file_name = kwargs["file"]
     max_ite = kwargs["iterations"]
+    figures = strtobool(kwargs["figures"])
     show_figures = strtobool(kwargs["show_figures"])
-
+    
     all_data_to_plot = []
     iterations, rewards_per_goal, changes = obtain_rewards_dict(file_name)
     for goal in rewards_per_goal:
@@ -155,7 +181,8 @@ def main():
         data_to_plot_dict = {goal:data_to_plot}
         all_data_to_plot.append(data_to_plot_dict)
 
-    plot_data(all_data_to_plot, max_ite, show_figures)
+    if figures: 
+        plot_data(all_data_to_plot, max_ite, show_figures)
         
         
 if __name__ == "__main__":
