@@ -31,10 +31,13 @@ def generate_names(input_file):
     i = 0
     name, extension = os.path.splitext(input_file)
     name_list = name.split("_")
+    n_executions = int(name_list[-1]) + 1
     title = "_".join(name_list[:-2])
-    while os.path.exists(f"{title}_{i}.svg"):
+
+    while os.path.exists(f"{title}_{n_executions}exec_{i}.svg"):
         i = i + 1
-    image_name = f"{title}_{i}.svg"
+    image_name = f"{title}_{n_executions}exec_{i}.svg"
+    title = title + f" ({n_executions} executions)"
     return title, image_name
 
 def goodness_average():
@@ -64,7 +67,7 @@ def goodness_average():
         iterations.extend(df['Iteration'].to_list())
         rewards.extend(df['Avg_reward'].to_list())
         
-    title, image_name = generate_names(files[0])
+    title, image_name = generate_names(files[-1])
 
     data = {
         'Iterations':iterations,
