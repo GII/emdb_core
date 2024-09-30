@@ -46,6 +46,7 @@ def goodness_average():
     parser.add_argument(
         "-f",
         "--files",
+        nargs='+',
         help="Files to create the figure"
     )
     parser.add_argument(
@@ -54,7 +55,6 @@ def goodness_average():
         default = "true",
         help="Select if the user wants to show the figure after execution"
     )
-    parser.add_argument("files", nargs="+", help="File names to merge")
     args = parser.parse_args()
     kwargs = vars(args)
     files = kwargs['files']
