@@ -41,7 +41,7 @@ class LTM(Node):
         """        
         super().__init__('ltm_' + str(id))
         self.id = id
-        self.changes_topic = True
+        self.changes_topic = False
         # TODO Create keys from config file
         self.cognitive_nodes = {'CNode': {}, 'Drive': {}, 'Goal': {}, 'Need': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
 
