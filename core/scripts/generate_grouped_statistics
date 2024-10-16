@@ -6,6 +6,7 @@ import sys
 import bz2
 import argparse
 import os
+import numpy as np
 
 #TODO: Could be better to create a class to send less variables between functions
 
@@ -60,13 +61,15 @@ def generate_grouped_statistics(goal_name, iterations, rewards, changes, max_ite
     for i in range(len(iterations)):
         iteration = int(iterations[i])
         reward = float(rewards[i])
+        if np.isnan(reward):
+            reward = 0.0
         change = int(changes[i])
         accumulated_reward += reward
         if not change:
             no_change_iterations+=1
         if reward > 0.01:
             rewarded_iterations+=1
-
+        
         if iteration % max_ite == 0 and iteration > 0:
             data.append({
                 "Iteration":iteration,
