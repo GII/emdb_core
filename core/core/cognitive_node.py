@@ -174,26 +174,38 @@ class CognitiveNode(Node):
         :type activation_list: dict
         """
         raise NotImplementedError
+    
+    def extract_oldest_timestamp(self, activation_list):
+        timestamp_dict={node_name: Time.from_msg(activation_list[node_name]['data'].timestamp).nanoseconds for node_name in activation_list}
+        if timestamp_dict:
+            oldest_node = min(zip(timestamp_dict.values(), timestamp_dict.keys()))[1]
+            oldest_timestamp = activation_list[oldest_node]['data'].timestamp
+        else:
+            oldest_node = None
+            oldest_timestamp = Time().to_msg() 
+        return (oldest_timestamp, oldest_node) 
 
     def calculate_activation_prod(self, activation_list):
         node_activations = [activation_list[node_name]['data'].activation for node_name in activation_list]
+        timestamp, _ = self.extract_oldest_timestamp(activation_list)
         if len(node_activations)!=0:
             activation=numpy.prod(node_activations)
         else:
             self.get_logger().debug(f'Node activation list empty!!')
             activation=0.0
         self.activation.activation=float(activation)
-        self.activation.timestamp=self.get_clock().now().to_msg()
+        self.activation.timestamp=timestamp
 
     def calculate_activation_max(self, activation_list):
         node_activations = [activation_list[node_name]['data'].activation for node_name in activation_list]
+        timestamp, _ = self.extract_oldest_timestamp(activation_list)
         if len(node_activations)!=0:
             activation=numpy.max(node_activations)
         else:
             self.get_logger().debug(f'Node activation list empty!!')
             activation=0
         self.activation.activation=float(activation)
-        self.activation.timestamp=self.get_clock().now().to_msg()
+        self.activation.timestamp=timestamp
 
     def publish_activation(self, activation: Activation):
             """
