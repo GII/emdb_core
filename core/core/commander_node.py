@@ -593,6 +593,8 @@ class CommanderNode(Node):
                         params_dict['Files']=data['LTM']['Files']
                     if data['LTM'].get('Connectors'):
                         params_dict['Connectors']=data['LTM']['Connectors']
+                    if data.get('Control'):
+                        params_dict['Control']=data['Control']
                     params_dict['random_seed']=self.random_seed
                     parameters=str(params_dict)
 

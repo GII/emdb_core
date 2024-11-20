@@ -93,6 +93,27 @@ class FilePNodesSuccess(File):
                 )
             self.node.pnodes_success[pnode] = None
 
+class FileTrialsSuccess(File):
+    """A file that records wether a P-node's activation has been successful or not."""
+
+    def write_header(self):
+        """Write the header of the file."""
+        super().write_header()
+        self.file_object.write("Trial\tIterations\tSuccess\n")
+
+    def write(self):
+        """Write success."""
+        for trial, iterations, success in self.node.trials_data:
+            self.file_object.write(
+                str(trial)
+                + "\t"
+                + str(iterations)
+                + "\t"
+                + str(success)
+                + "\n"
+            )
+        self.node.trials_data = []
+
 class FilePNodesContent(File):
     def write_header(self):
         super().write_header()
