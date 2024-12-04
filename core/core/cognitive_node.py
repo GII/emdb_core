@@ -10,8 +10,6 @@ from core.service_client import ServiceClient, ServiceClientAsync
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM
 from cognitive_node_interfaces.srv import GetActivation, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
 from cognitive_node_interfaces.msg import Activation
-from cognitive_node_interfaces.msg import Perception
-from cognitive_node_interfaces.msg import PerceptionParameters
 from core.utils import perception_msg_to_dict
 
 class CognitiveNode(Node):
