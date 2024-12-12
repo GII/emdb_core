@@ -19,7 +19,7 @@ def perception_dict_to_msg(perception_dict):
     """
     msg = Perception()
     if perception_dict:
-        __dict_to_msg(msg, perception_dict)
+        dict_to_msg(msg, perception_dict)
     else:
         msg.data = []
     return msg
@@ -35,12 +35,12 @@ def actuation_dict_to_msg(actuation_dict):
     """
     msg = Actuation()
     if actuation_dict:
-        __dict_to_msg(msg, actuation_dict)
+        dict_to_msg(msg, actuation_dict)
     else:
         msg.data = []
     return msg
 
-def __dict_to_msg(msg, object_dict):
+def dict_to_msg(msg, object_dict):
     """
     Transform an object dictionary into a ROS message
 
@@ -80,19 +80,19 @@ def perception_msg_to_dict(msg):
     :return: The dictionary with the perceptions
     :rtype: dict
     """
-    perception_dict = __msg_to_dict(msg)
+    perception_dict = msg_to_dict(msg)
 
     return perception_dict
 
 def actuation_msg_to_dict(msg):
-    actuation_dict= __msg_to_dict(msg)
+    actuation_dict= msg_to_dict(msg)
 
     return actuation_dict
 
 
-def __msg_to_dict(msg):
+def msg_to_dict(msg):
     """
-    TODO
+    Transform a ROS message that contains an object list into a dictionary
 
     """
     dict = {}
