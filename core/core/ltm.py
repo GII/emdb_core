@@ -8,7 +8,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
 from rclpy import spin_until_future_complete
 
-from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, GetNodeFromLTM, ReplaceNodeFromLTM, SetChangesTopic
+from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, GetNodeFromLTM, ReplaceNodeFromLTM, SetChangesTopic, UpdateNeighbor
 from cognitive_node_interfaces.srv import AddNeighbor, DeleteNeighbor
 from core.service_client import ServiceClient, ServiceClientAsync
 
@@ -77,6 +77,13 @@ class LTM(Node):
             DeleteNodeFromLTM,
             'ltm_' + str(self.id) + '/delete_node',
             self.delete_node_callback, callback_group=self.cbgroup_server
+        )
+
+        # Change connection
+        self.update_neighbors_service = self.create_service(
+            UpdateNeighbor,
+            'ltm_' + str(self.id) + '/update_neighbor',
+            self.update_neighbor_callback, callback_group=self.cbgroup_server
         )
 
         # Get node service
@@ -352,6 +359,32 @@ class LTM(Node):
         response.changes_topic = changes_topic
         return response
     
+    def update_neighbor_callback(self, request, response):
+        self.get_logger().info(f"Processing neighbor change")
+        node_name=request.node_name
+        neighbor_name=request.neighbor_name
+        operation=request.operation
+        #Get information from the nodes
+        node_dict=self.get_node_dict(node_name)
+        neighbor_dict=self.get_node_dict(neighbor_name)
+        #Return error if nodes are not found
+        if not node_dict or not neighbor_dict:
+            if not node_dict:
+                self.get_logger().error(f"Node {node_name} not found in LTM")
+            if not neighbor_dict:
+                self.get_logger().error(f"Node {neighbor_name} not found in LTM")
+            response.success=False
+            return response
+        if operation:
+            pass #Logic for adding the neighbor
+            add_dict={'name': node_name, 'node_type': node_dict['node_type']}
+            node_dict['neighbors'].append(add_dict)
+        else:
+            pass #Logic for deleting the neighbor
+
+
+
+    
     # endregion Callbacks
     
     # region CRUD operations
@@ -388,6 +421,8 @@ class LTM(Node):
                 await self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
 
 
+        """
+        #REMOVING THIS TO TEST DIRECTED ACTIVATIONS
         #Add the new node to the dictionary of the corresponding neighbors
         for neighbor in self.cognitive_nodes[node_type][node_name]['neighbors']:
             neighbor_name=neighbor['name']
@@ -395,7 +430,7 @@ class LTM(Node):
             for neighbor_type in self.cognitive_nodes:
                 if neighbor_name in self.cognitive_nodes[neighbor_type]:
                     self.cognitive_nodes[neighbor_type][neighbor_name]['neighbors'].append(node_dict)
-
+        """
         self.publish_state()
     
     def delete_node(self, node_type, node_name):
@@ -436,6 +471,13 @@ class LTM(Node):
         :rtype: bool
         """
         return node_type in self.cognitive_nodes
+    
+    def get_node_dict(self, name, default=None):
+        data_dic=default
+        for node_type in self.cognitive_nodes:
+            if name in self.cognitive_nodes[node_type]:
+                data_dic = self.cognitive_nodes[node_type][name]
+        return data_dic
     
     # endregion CRUD operations
 

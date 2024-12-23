@@ -32,6 +32,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SendToExecutor.srv"
   "srv/SetChangesTopic.srv"
   "srv/StopExecution.srv"
+  "srv/UpdateNeighbor.srv"
   DEPENDENCIES builtin_interfaces  
 )
 
