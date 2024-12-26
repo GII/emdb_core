@@ -7,7 +7,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
 
 from core.service_client import ServiceClient, ServiceClientAsync
-from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM
+from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor
 from cognitive_node_interfaces.srv import GetActivation, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
 from cognitive_node_interfaces.msg import Activation
 from core.utils import perception_msg_to_dict
@@ -40,7 +40,6 @@ class CognitiveNode(Node):
         self.neighbors = [] # List of dics, like [{"name": "pnode1", "node_type": "PNode"}, {"name": "cnode1", "node_type": "CNode"}]
         
         self.activation_inputs={}
-        self.activation_sources=[] #List of node types that provide activations for a node, must be populated in each node type
         self.activation_topic = True
         self.activation = Activation()
         self.activation.node_name=self.name
@@ -339,8 +338,8 @@ class CognitiveNode(Node):
     def create_activation_input(self, node: dict): #Adds a node from the activation inputs list. By default reads activations.
         name=node['name']
         node_type=node['node_type']
-        if name not in self.activation_inputs:
-            if node_type in self.activation_sources:
+        if node_type != 'Perception':
+            if name not in self.activation_inputs:
                 subscriber=self.create_subscription(Activation, 'cognitive_node/' + str(name) + '/activation', self.read_activation_callback, 1, callback_group=self.cbgroup_activation)
                 data=Activation()
                 updated=False
@@ -348,9 +347,7 @@ class CognitiveNode(Node):
                 self.activation_inputs[name]=new_input
                 self.get_logger().debug(f'Created new activation input: {name} of type {node_type}')
             else:
-                self.get_logger().debug(f'Node {name} of type {node_type} is not an activation source')
-        else:
-            self.get_logger().error(f'Tried to add {name} to activation inputs more than once')
+                self.get_logger().error(f'Tried to add {name} to activation inputs more than once')
     
     def delete_activation_input(self, node: dict): #Deletes a node from the activation inputs list. By default reads activations.
         name=node['name']
@@ -371,6 +368,21 @@ class CognitiveNode(Node):
             elif Time.from_msg(msg.timestamp).nanoseconds<Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds:
                 self.get_logger().warn(f'Detected jump back in time, activation of node: {node_name} ({msg.node_type})')
         
+    def add_neighbor_client(self, node_name, neighbor_name):
+        response=self.update_neighbor_client(node_name, neighbor_name, True)
+        return response
+
+    def delete_neighbor_client(self, node_name, neighbor_name):
+        response=self.update_neighbor_client(node_name, neighbor_name, False)
+        return response
+
+    def update_neighbor_client(self, node_name, neighbor_name, operation):
+        service_name=f"{self.LTM_id}/update_neighbor"
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClientAsync(self, UpdateNeighbor, service_name, self.cbgroup_client)
+        response= self.node_clients[service_name].send_request_async(node_name=node_name, neighbor_name=neighbor_name, operation=operation)
+        return response
+
     def __str__(self):
         """
         Returns a YAML representation of the node's data.
