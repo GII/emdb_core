@@ -135,3 +135,27 @@ def separate_perceptions(perception):
             perceptions.append(perception_line)
 
     return perceptions
+
+def compare_perceptions(input_1, input_2, thresh=0.01):
+        """
+        Return True if both perceptions have the same value. False otherwise.
+
+        :param sensing: Sensing in the current iteration.
+        :type sensing: dict
+        :param old_sensing: Sensing in the last iteration.
+        :type old_sensing: dict
+        :return: Boolean that indicates if there is a sensorial change.
+        :rtype: bool
+        """
+
+        for sensor in input_1:
+            for perception_1, perception_2 in zip(input_1[sensor], input_2[sensor]):
+                if isinstance(perception_1, dict):
+                    for attribute in perception_1:
+                        difference = abs(perception_1[attribute] - perception_2[attribute])
+                        if difference > thresh:
+                            return False
+                else:
+                    if abs(perception_1[0] - perception_2[0]) > thresh:
+                        return False
+        return True

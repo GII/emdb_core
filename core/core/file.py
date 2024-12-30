@@ -3,7 +3,7 @@ import os
 
 from core.service_client import ServiceClient
 from cognitive_node_interfaces.msg import Activation
-from cognitive_node_interfaces.srv import SendPNodeSpace
+from cognitive_node_interfaces.srv import SendSpace
 from cognitive_processes_interfaces.msg import Episode
 from core.utils import perception_msg_to_dict, separate_perceptions
 
@@ -124,7 +124,7 @@ class FilePNodesContent(File):
 
     def create_pnode_client(self, pnode_name):
         if pnode_name not in self.created_clients:
-            pnode_client = ServiceClient(SendPNodeSpace, 'pnode/' + str(pnode_name) + '/send_pnode_space')
+            pnode_client = ServiceClient(SendSpace, 'pnode/' + str(pnode_name) + '/send_pnode_space')
             self.created_clients[pnode_name] = pnode_client
 
     def finish_header(self, labels):

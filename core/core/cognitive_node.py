@@ -377,11 +377,12 @@ class CognitiveNode(Node):
         return response
 
     def update_neighbor_client(self, node_name, neighbor_name, operation):
-        service_name=f"{self.LTM_id}/update_neighbor"
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClientAsync(self, UpdateNeighbor, service_name, self.cbgroup_client)
-        response= self.node_clients[service_name].send_request_async(node_name=node_name, neighbor_name=neighbor_name, operation=operation)
-        return response
+        if getattr(self, "LTM_id", None):
+            service_name=f"{self.LTM_id}/update_neighbor"
+            if service_name not in self.node_clients:
+                self.node_clients[service_name] = ServiceClientAsync(self, UpdateNeighbor, service_name, self.cbgroup_client)
+            response= self.node_clients[service_name].send_request_async(node_name=node_name, neighbor_name=neighbor_name, operation=operation)
+            return response
 
     def __str__(self):
         """
