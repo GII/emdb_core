@@ -352,7 +352,7 @@ class CognitiveNode(Node):
     def delete_activation_input(self, node: dict): #Deletes a node from the activation inputs list. By default reads activations.
         name=node['name']
         if name in self.activation_inputs:
-            self.destroy_subscription(self.activation_inputs[name]['subscription'])
+            self.destroy_subscription(self.activation_inputs[name]['subscriber'])
             self.activation_inputs.pop(name)
     
     def configure_activation_inputs(self, neighbor_list):

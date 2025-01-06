@@ -382,6 +382,7 @@ class LTM(Node):
                 node_dict['neighbors'].append(add_dict)
                 await self.add_neighbor(neighbor_name, neighbor_type, node_name)
                 success=True
+                self.get_logger().info(f"Successfully added {neighbor_name} as neighbor of {node_name}")
             else:
                 i=0
                 for neighbor in node_dict['neighbors']:
@@ -390,8 +391,8 @@ class LTM(Node):
                         success=True
                     else:
                         i+=1
-                #TODO: Complete the implementation by creating a handler inside cognitive node to delete a neighbor
                 await self.delete_neighbor(neighbor_name, neighbor_type, node_name)
+                self.get_logger().info(f"Successfully removed {neighbor_name} as neighbor of {node_name}")
         self.publish_state()
         response.success=success
         return response
@@ -513,7 +514,7 @@ class LTM(Node):
     async def delete_neighbor(self, neighbor_name, neighbor_type, service_node_name):
         service_name = 'cognitive_node/' + service_node_name + '/delete_neighbor'
         if service_name not in self.node_clients:
-            self.node_clients[service_name]=ServiceClientAsync(self, AddNeighbor, service_name, callback_group=self.cbgroup_client)
+            self.node_clients[service_name]=ServiceClientAsync(self, DeleteNeighbor, service_name, callback_group=self.cbgroup_client)
         result = await self.node_clients[service_name].send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
         return result
     
