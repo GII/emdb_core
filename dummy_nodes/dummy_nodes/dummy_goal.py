@@ -1,6 +1,6 @@
 from cognitive_nodes.goal import GoalMotiven
 
-class GoalEffectance(GoalMotiven):
+class GoalDummy(GoalMotiven):
     def __init__(self, name='goal', class_name='cognitive_nodes.goal.Goal', **params):
         super().__init__(name, class_name, **params)
     

@@ -7,7 +7,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
 
 from core.service_client import ServiceClient, ServiceClientAsync
-from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor
+from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
 from cognitive_node_interfaces.srv import GetActivation, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
 from cognitive_node_interfaces.msg import Activation
 from core.utils import perception_msg_to_dict
@@ -383,6 +383,31 @@ class CognitiveNode(Node):
                 self.node_clients[service_name] = ServiceClientAsync(self, UpdateNeighbor, service_name, self.cbgroup_client)
             response= self.node_clients[service_name].send_request_async(node_name=node_name, neighbor_name=neighbor_name, operation=operation)
             return response
+
+    def create_node_client(self, name, class_name, parameters={}):
+        """
+        This method calls the add node service of the commander.
+
+        :param name: Name of the node to be created.
+        :type name: str
+        :param class_name: Name of the class to be used for the creation of the node.
+        :type class_name: str
+        :param parameters: Optional parameters that can be passed to the node, defaults to {}
+        :type parameters: dict, optional
+        :return: Success status received from the commander
+        :rtype: bool
+        """
+
+        self.get_logger().info("Requesting node creation")
+        params_str = yaml.dump(parameters)
+        service_name = "commander/create"
+        if service_name not in self.node_clients:
+            self.node_clients[service_name] = ServiceClientAsync(self, CreateNode, service_name, self.cbgroup_client)
+        response = self.node_clients[service_name].send_request_async(
+            name=name, class_name=class_name, parameters=params_str
+        )
+        return response
+
 
     def __str__(self):
         """
