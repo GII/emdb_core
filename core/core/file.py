@@ -124,7 +124,7 @@ class FilePNodesContent(File):
 
     def create_pnode_client(self, pnode_name):
         if pnode_name not in self.created_clients:
-            pnode_client = ServiceClient(SendSpace, 'pnode/' + str(pnode_name) + '/send_pnode_space')
+            pnode_client = ServiceClient(SendSpace, 'pnode/' + str(pnode_name) + '/send_space')
             self.created_clients[pnode_name] = pnode_client
 
     def finish_header(self, labels):
@@ -164,14 +164,141 @@ class FilePNodesContent(File):
                                 j = j + len(labels)
 
                         else:
-                            self.file_object.write("ERROR. LABELS NOT MATCH BETWEEN PNODES\n")
+                            self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN PNODES\n")
                     
                     else:
                         self.created_clients[pnode] = None
                 
+                
+                
             self.ite = self.ite + 100
 
+class FileLastIterationPNodesContent(FilePNodesContent):
+    def write(self):
+        if "PNode" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
+            for pnode in self.node.LTM_cache["PNode"]:
+                self.create_pnode_client(pnode)
 
+                if self.created_clients[pnode]:
+                    response = self.created_clients[pnode].send_request()
+
+                    labels = response.labels
+
+                    if labels:
+                        if not self.header_finished:
+                            self.finish_header(labels)
+                        
+                        if labels == self.labels:
+                            data = response.data
+                            confidences = response.confidences
+
+                            j = 0
+                            for confidence in confidences:
+                                self.file_object.write(str(self.node.iterations) + "\t")
+                                self.file_object.write(pnode + "\t")
+
+                                for i in range(j, len(labels)+j):
+                                    self.file_object.write(str(data[i]) + "\t")
+                                self.file_object.write(str(confidence) + "\n")
+                                j = j + len(labels)
+
+                        else:
+                            self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN PNODES\n")
+                    
+                    else:
+                        self.created_clients[pnode] = None
+                    
+        
+class FileGoalsContent(File):
+    def write_header(self):
+        super().write_header()
+        self.file_object.write("Iteration\tIdent\t")
+        self.header_finished = False
+        self.created_clients = {}
+        self.ite = 100
+
+    def create_goal_client(self, goal_name):
+        if goal_name not in self.created_clients:
+            goal_client = ServiceClient(SendSpace, 'goal/' + str(goal_name) + '/send_space')
+            self.created_clients[goal_name] = goal_client
+
+    def finish_header(self, labels):
+        for label in labels:
+            self.file_object.write(f"{label}\t")
+        self.file_object.write("Confidence\n")
+        self.header_finished = True
+        self.labels = labels
+
+    def write(self):
+        if "Goal" in self.node.LTM_cache and self.node.iteration % 100 == 0:
+            for goal in self.node.LTM_cache["Goal"]:
+                if goal not in self.created_clients:
+                    self.create_goal_client(goal)
+
+                if self.created_clients[goal]:
+                    response = self.created_clients[goal].send_request()
+
+                    labels = response.labels
+
+                    if labels:
+                        if not self.header_finished:
+                            self.finish_header(labels)
+                        
+                        if labels == self.labels:
+                            data = response.data
+                            confidences = response.confidences
+
+                            j = 0
+                            for confidence in confidences:
+                                self.file_object.write(str(self.ite) + "\t")
+                                self.file_object.write(goal + "\t")
+
+                                for i in range(j, len(labels)+j):
+                                    self.file_object.write(str(data[i]) + "\t")
+                                self.file_object.write(str(confidence) + "\n")
+                                j = j + len(labels)
+
+                        else:
+                            self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN GOALS\n")
+                    
+                    else:
+                        self.created_clients[goal] = None
+                
+            self.ite = self.ite + 100
+    
+
+class FileLastIterationGoalsContent(FileGoalsContent):
+    def write(self):
+        if "Goal" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
+            for goal in self.node.LTM_cache["Goal"]:
+                self.create_goal_client(goal)
+                if self.created_clients[goal]:
+                    response = self.created_clients[goal].send_request()
+                    labels = response.labels
+
+                    if labels:
+                        if not self.header_finished:
+                            self.finish_header(labels)
+                        
+                        if labels == self.labels:
+                            data = response.data
+                            confidences = response.confidences
+
+                            j = 0
+                            for confidence in confidences:
+                                self.file_object.write(str(self.node.iterations) + "\t")
+                                self.file_object.write(goal + "\t")
+
+                                for i in range(j, len(labels)+j):
+                                    self.file_object.write(str(data[i]) + "\t")
+                                self.file_object.write(str(confidence) + "\n")
+                                j = j + len(labels)
+
+                        else:
+                            self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN GOALS\n")
+                    
+                    else:
+                        self.created_clients[goal] = None
 
 
 
