@@ -1,10 +1,12 @@
 from rclpy.time import Time
 import os
+import yaml
 
 from core.service_client import ServiceClient
 from cognitive_node_interfaces.msg import Activation
 from cognitive_node_interfaces.srv import SendSpace
 from cognitive_processes_interfaces.msg import Episode
+from core_interfaces.srv import GetNodeFromLTM
 from core.utils import perception_msg_to_dict, separate_perceptions
 
 class File():
@@ -299,6 +301,30 @@ class FileLastIterationGoalsContent(FileGoalsContent):
                     
                     else:
                         self.created_clients[goal] = None
+
+class FileNeighbors(File):
+    def write_header(self):
+        super().write_header()
+        self.file_object.write("Goal\tNeighbor1\tNeighbor2\n")
+        self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
+    
+    def write(self):
+        if self.node.iteration == self.node.iterations:
+            response = self.ltm_client.send_request(name="")
+            neighbors = yaml.safe_load(response.data)
+            for goal in neighbors['Goal']:
+                if 'reach' in goal or 'goal_' in goal:
+                    self.file_object.write(str(goal) + "\t")
+                    self.file_object.write(str(neighbors['Goal'][goal]["neighbors"][0]["name"]) + "\t")
+                    if 'reach' in goal:
+                        self.file_object.write(str(neighbors['Goal'][goal]["neighbors"][1]["name"]) + "\n")
+                    else:
+                        self.file_object.write("\n")
+
+            
+
+
+    
 
 
 
