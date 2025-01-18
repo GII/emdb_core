@@ -101,13 +101,15 @@ class FileTrialsSuccess(File):
     def write_header(self):
         """Write the header of the file."""
         super().write_header()
-        self.file_object.write("Trial\tIterations\tSuccess\n")
+        self.file_object.write("Iteration\tTrial\tIterations\tSuccess\n")
 
     def write(self):
         """Write success."""
-        for trial, iterations, success in self.node.trials_data:
+        for iteration, trial, iterations, success in self.node.trials_data:
             self.file_object.write(
-                str(trial)
+                str(iteration)
+                + "\t"
+                + str(trial)
                 + "\t"
                 + str(iterations)
                 + "\t"

@@ -1,3 +1,4 @@
+import random
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -17,7 +18,7 @@ class ServiceClient(Node):
         :param service_name: The name of the ROS 2 service.
         :type service_name: str
         """        
-        self.client_name = service_name.replace("/", "_") + '_client'
+        self.client_name = service_name.replace("/", "_") + '_client_' + f"{random.randint(0, 999999):06}"
         super().__init__(self.client_name)
         self.cbgroup=MutuallyExclusiveCallbackGroup()
         self.cli = self.create_client(service_type, service_name, callback_group=self.cbgroup)
