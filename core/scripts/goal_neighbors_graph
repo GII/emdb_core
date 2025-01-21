@@ -1,0 +1,97 @@
+import networkx as nx
+import matplotlib.pyplot as plt
+import magic
+import sys
+import bz2
+import re
+import argparse
+
+
+def open_file(name):
+    """Open a file using its magic number to identify its contents."""
+    file_type = magic.from_file(name)
+    if "text" in file_type:
+        return open(name, encoding="utf-8")
+    if "bzip2" in file_type:
+        return bz2.open(name)
+    print("Unsupported file!!!")
+    sys.exit(1)
+
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0)."""
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    if val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    raise ValueError(f"invalid truth value {val}")
+
+def neighbors_graph():
+    parser = argparse.ArgumentParser(description="Create goal neighbors graph")
+
+    parser.add_argument(
+        "-f",
+        "--file",
+        help="File to create the graph"
+    )
+
+    parser.add_argument(
+        "-s",
+        "--show_graph",
+        default = "true",
+        help="Select if the user wants to show the graph after execution"
+    )
+
+    args = parser.parse_args()
+    kwargs = vars(args)
+    file_path = kwargs['file']
+    show_graph = strtobool(kwargs['show_graph'])
+
+    G = nx.DiGraph()
+
+    with open_file(file_path) as file:
+        lines = file.readlines()
+
+    goals = {}
+
+    for line in lines[1:]:
+        fields = line.strip().split('\t')
+        goals[fields[0]] = []
+        if len(fields) > 2:
+            if fields[2] in goals:
+                goals[fields[2]].append(
+                    dict(
+                        neighbor_name=fields[0],
+                        policy=re.sub(r'^.*?__([^_]+_[^_]+)$', r'\1', fields[1])
+                    )
+                )
+
+    for goal, neighbors in goals.items():
+        G.add_node(goal)
+        if neighbors:
+            for neighbor in neighbors:
+                G.add_edge(goal, neighbor['neighbor_name'], policy=neighbor['policy'])
+
+    pos = nx.nx_agraph.graphviz_layout(G, prog="dot", args="-Grankdir=TB")
+
+    plt.figure(figsize=(12, 10))
+
+    nx.draw_networkx_nodes(G, pos, node_size=6500, node_color='lightblue')
+
+    nx.draw_networkx_labels(G, pos, font_size=10, font_color='black')
+
+    edge_labels = nx.get_edge_attributes(G, 'policy')
+    nx.draw_networkx_edges(G, pos, arrowstyle='-|>', arrowsize=20)
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=10, label_pos=0.5)
+
+    title= file_path.replace('.txt', '')
+    n = title[-1]
+    output_file = f"{title[:-1]}graph_{n}.png"
+    plt.savefig(output_file, format='png', bbox_inches='tight')
+
+    if show_graph:
+        plt.show()
+        
+    print(f"Graph generated: {output_file}")
+
+neighbors_graph()
