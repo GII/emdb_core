@@ -39,13 +39,23 @@ def neighbors_graph():
         "-s",
         "--show_graph",
         default = "true",
-        help="Select if the user wants to show the graph after execution"
+        help="Select if the user wants to show the graph after execution. True by default"
+    )
+
+    parser.add_argument(
+        "-o",
+        "--orientation",
+        default = "horizontal",
+        help="Choose the orientation of the graph. It could be vertical or horizontal. Vertical by default"
     )
 
     args = parser.parse_args()
     kwargs = vars(args)
     file_path = kwargs['file']
     show_graph = strtobool(kwargs['show_graph'])
+    orientation = kwargs['orientation']
+    
+    orient = "RL" if orientation == 'horizontal' else "TB"
 
     G = nx.DiGraph()
 
@@ -72,7 +82,7 @@ def neighbors_graph():
             for neighbor in neighbors:
                 G.add_edge(goal, neighbor['neighbor_name'], policy=neighbor['policy'])
 
-    pos = nx.nx_agraph.graphviz_layout(G, prog="dot", args="-Grankdir=TB")
+    pos = nx.nx_agraph.graphviz_layout(G, prog="dot", args=f"-Grankdir={orient}")
 
     plt.figure(figsize=(12, 10))
 
