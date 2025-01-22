@@ -64,6 +64,11 @@ class CommanderNode(Node):
             self.load_config, callback_group=self.cbgroup_server
         )
 
+        self.kill_commander_service = self.create_service(
+            StopExecution,
+            'commander/kill',
+            self.kill_commander, callback_group=self.cbgroup_server
+        )
 
     def load_config(self, request, response):
         """
@@ -889,6 +894,12 @@ class CommanderNode(Node):
             self.node_clients[service_name] = ServiceClient(StopExecution, service_name)
         executor_response = self.node_clients[service_name].send_request()
         return executor_response
+    
+    def kill_commander(self, request, response):
+        self.process_shutdown()
+        self.destroy_node()
+
+        return response
     
     def process_shutdown(self):
         for process in self.executors.values():
