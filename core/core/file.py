@@ -170,8 +170,6 @@ class FilePNodesContent(File):
                         else:
                             self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN PNODES\n")
                     
-                    else:
-                        self.created_clients[pnode] = None
                 
                 
                 
@@ -209,8 +207,6 @@ class FileLastIterationPNodesContent(FilePNodesContent):
                         else:
                             self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN PNODES\n")
                     
-                    else:
-                        self.created_clients[pnode] = None
                     
         
 class FileGoalsContent(File):
@@ -238,10 +234,9 @@ class FileGoalsContent(File):
             for goal in self.node.LTM_cache["Goal"]:
                 if goal not in self.created_clients:
                     self.create_goal_client(goal)
-
                 if self.created_clients[goal]:
                     response = self.created_clients[goal].send_request()
-
+                    self.node.get_logger().info(f"Writing data for goal {goal}. Points: {len(response.confidences)}")
                     labels = response.labels
 
                     if labels:
@@ -265,8 +260,6 @@ class FileGoalsContent(File):
                         else:
                             self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN GOALS\n")
                     
-                    else:
-                        self.created_clients[goal] = None
                 
             self.ite = self.ite + 100
     
@@ -313,67 +306,30 @@ class FileNeighbors(File):
     def write(self):
         if self.node.iteration == self.node.iterations:
             response = self.ltm_client.send_request(name="")
-            neighbors = yaml.safe_load(response.data)
-            for goal in neighbors['Goal']:
+            nodes = yaml.safe_load(response.data)
+            for goal in nodes['Goal']:
                 if 'reach' in goal or 'goal_' in goal:
                     self.file_object.write(str(goal) + "\t")
-                    self.file_object.write(str(neighbors['Goal'][goal]["neighbors"][0]["name"]) + "\t")
+                    self.file_object.write(str(nodes['Goal'][goal]["neighbors"][0]["name"]) + "\t")
                     if 'reach' in goal:
-                        self.file_object.write(str(neighbors['Goal'][goal]["neighbors"][1]["name"]) + "\n")
+                        self.file_object.write(str(nodes['Goal'][goal]["neighbors"][1]["name"]) + "\n")
                     else:
                         self.file_object.write("\n")
 
-            
-
-
+class FileNeighborsFull(File):
+    def write_header(self):
+        super().write_header()
+        self.file_object.write("Goal\tNeighbor1\tNeighbor2\n")
+        self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
     
+    def write(self):
+        if self.node.iteration == self.node.iterations:
+            response = self.ltm_client.send_request(name="")
+            nodes = yaml.safe_load(response.data)
+            for goal in nodes['Goal']:
+                self.file_object.write(str(goal) + "\t")
+                self.file_object.write(str(nodes['Goal'][goal]["neighbors"]) + "\n")
 
-
-
-                
-
-                    
-# WORK IN PROGRESS
-
-# class FilesEpisodes(File):
-#     def __init__(self, **kwargs):
-#         super().__init__(**kwargs)
-#         self.write_header()
-#         self.node.create_subscription(
-#             Episode,
-#             'main_loop/episodes',
-#             self.receive_episodes_callback,
-#             1,
-#             callback_group = self.node.cbgroup_loop
-#         )
-    
-#     def write_header(self):
-#         """Write the header of the file."""
-#         super().write_header()
-#         self.file_object.write(
-#             "Timestamp\tOld perception\tOld LTM state\tPolicy\tPerception\tLTM state\tReward list\n"
-#         )
-    
-#     def receive_episodes_callback(self, msg: Episode):
-#         self.file_object.write(
-#             str(Time.from_msg(msg.timestamp).nanoseconds)
-#             + "\t"
-#             + str(perception_msg_to_dict(msg.old_perception))
-#             #+ "\t"
-#             #+ msg.old_ltm_state
-#             + "\t"
-#             + msg.policy
-#             + "\t"
-#             + str(perception_msg_to_dict(msg.perception))
-#             #+ "\t"
-#             #+ msg.ltm_state
-#             + "\t"
-#             + msg.reward_list
-#             + "\n"
-#         )
-
-#     def write(self):
-#         pass
 
 
 

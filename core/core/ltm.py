@@ -377,23 +377,31 @@ class LTM(Node):
         else:
             #Perform neighbor operation
             neighbor_type=self.get_node_type(neighbor_name)
+            neigh_dict={'name': neighbor_name, 'node_type': neighbor_type}
             if operation:
-                add_dict={'name': neighbor_name, 'node_type': neighbor_type}
-                node_dict['neighbors'].append(add_dict)
-                await self.add_neighbor(neighbor_name, neighbor_type, node_name)
-                success=True
-                self.get_logger().info(f"Successfully added {neighbor_name} as neighbor of {node_name}")
+                if neigh_dict not in node_dict['neighbors']:
+                    node_dict['neighbors'].append(neigh_dict)
+                    await self.add_neighbor(neighbor_name, neighbor_type, node_name)
+                    success=True
+                    self.get_logger().info(f"Successfully added {neighbor_name} as neighbor of {node_name}")
+                else:
+                    success=False
+                    self.get_logger().error(f"{neighbor_name} is already a neighbor of {node_name}")
             else:
                 i=0
-                for neighbor in node_dict['neighbors']:
-                    if neighbor['name']==neighbor_name:
-                        del node_dict['neighbors'][i]
-                        success=True
-                    else:
-                        i+=1
-                await self.delete_neighbor(neighbor_name, neighbor_type, node_name)
-                self.get_logger().info(f"Successfully removed {neighbor_name} as neighbor of {node_name}")
-        self.publish_state()
+                if neigh_dict in node_dict['neighbors']: 
+                    for neighbor in node_dict['neighbors']:
+                        if neighbor['name']==neighbor_name:
+                            del node_dict['neighbors'][i]
+                            success=True
+                        else:
+                            i+=1
+                    await self.delete_neighbor(neighbor_name, neighbor_type, node_name)
+                    self.get_logger().info(f"Successfully removed {neighbor_name} as neighbor of {node_name}")
+                else:
+                    success=False
+                    self.get_logger().error(f"{neighbor_name} is not a neighbor of {node_name}")
+            self.publish_state()
         response.success=success
         return response
         
