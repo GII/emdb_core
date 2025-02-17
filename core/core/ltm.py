@@ -28,6 +28,7 @@ class LTM(Node):
         add_node_service (Service): Service to add new cognitive nodes.
         replace_node_service (Service): Service to replace existing cognitive nodes.
         delete_node_service (Service): Service to delete cognitive nodes.
+        update_neighbors_service (Service): Service to update the neighbors list of a node.
         get_node_service (Service): Service to retrieve data of cognitive nodes.
         set_changes_topic_service (Service): Service to set the changes topic.
     """    
@@ -101,6 +102,7 @@ class LTM(Node):
         )
 
     def publish_state(self):
+        """Publishes the LTM state in the state topic."""        
         if(self.changes_topic):
             msg = String()
             msg.data = self.cognitive_nodes.__str__()
@@ -108,26 +110,6 @@ class LTM(Node):
             self.get_logger().debug(f"State: {msg.data}")
 
     # region Properties
-    @property
-    def a_nodes(self): # TODO Remove this
-        """
-        Get all cognitive nodes of type 'ANode' from the LTM.
-
-        :return: A list of 'ANode' nodes.
-        :rtype: list
-        """
-        return self.cognitive_nodes.get('ANode', [])
-    
-    @property
-    def b_nodes(self): # TODO Remove this
-        """
-        Get all cognitive nodes of type 'BNode' from the LTM.
-
-        :return: A list of 'BNode' nodes.
-        :rtype: list
-        """
-        return self.cognitive_nodes.get('BNode', [])
-    
     @property
     def drives(self):
         """

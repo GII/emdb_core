@@ -42,8 +42,22 @@ class ServiceClient(Node):
         return self.future.result()
     
 class ServiceClientAsync():
-
+    """
+    A generic service client class.
+    """
     def __init__(self, node:Node, service_type, service_name, callback_group) -> None:
+        """
+        Constructor for the ServiceClient class.
+
+        :param node: ROS2 node that will host the service client
+        :type node: Node
+        :param service_type: Message Interface
+        :type service_type: Any ROS2 service interface
+        :param service_name: Name of the service
+        :type service_name: str
+        :param callback_group: Callback group to assign the service client
+        :type callback_group: rclpy.callback_groups.*
+        """        
         self.node=node
         self.cli = self.node.create_client(service_type, service_name, callback_group=callback_group)
         while not self.cli.wait_for_service(timeout_sec=1.0):

@@ -119,19 +119,23 @@ class FileTrialsSuccess(File):
         self.node.trials_data = []
 
 class FilePNodesContent(File):
+    """A file that saves the contents of the P-nodes"""    
     def write_header(self):
+        """Write the header of the file."""
         super().write_header()
         self.file_object.write("Iteration\tIdent\t")
         self.header_finished = False
         self.created_clients = {}
-        self.ite = 100
+        self.ite = 100 #Iterations between writes 
 
     def create_pnode_client(self, pnode_name):
+        """Create client to request P-Node's space"""
         if pnode_name not in self.created_clients:
             pnode_client = ServiceClient(SendSpace, 'pnode/' + str(pnode_name) + '/send_space')
             self.created_clients[pnode_name] = pnode_client
 
     def finish_header(self, labels):
+        """Write P-Node dimensions in the header of the file"""
         for label in labels:
             self.file_object.write(f"{label}\t")
         self.file_object.write("Confidence\n")
@@ -139,6 +143,7 @@ class FilePNodesContent(File):
         self.labels = labels
 
     def write(self):
+        """Writes P-Nodes contents"""        
         if "PNode" in self.node.LTM_cache and self.node.iteration % 100 == 0:
             for pnode in self.node.LTM_cache["PNode"]:
                 if pnode not in self.created_clients:
@@ -169,14 +174,12 @@ class FilePNodesContent(File):
 
                         else:
                             self.file_object.write("ERROR. LABELS DO NOT MATCH BETWEEN PNODES\n")
-                    
-                
-                
-                
             self.ite = self.ite + 100
 
 class FileLastIterationPNodesContent(FilePNodesContent):
+    """A file that saves the contents of the P-nodes at the end of an experiment"""
     def write(self):
+        """Writes P-Nodes contents"""  
         if "PNode" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
             for pnode in self.node.LTM_cache["PNode"]:
                 self.create_pnode_client(pnode)
@@ -210,7 +213,9 @@ class FileLastIterationPNodesContent(FilePNodesContent):
                     
         
 class FileGoalsContent(File):
+    """A file that saves the contents of the Goals at the end of an experiment"""
     def write_header(self):
+        """Write the header of the file."""
         super().write_header()
         self.file_object.write("Iteration\tIdent\t")
         self.header_finished = False
@@ -218,11 +223,13 @@ class FileGoalsContent(File):
         self.ite = 100
 
     def create_goal_client(self, goal_name):
+        """Create client to request Goal's space"""
         if goal_name not in self.created_clients:
             goal_client = ServiceClient(SendSpace, 'goal/' + str(goal_name) + '/send_space')
             self.created_clients[goal_name] = goal_client
 
     def finish_header(self, labels):
+        """Write Goals dimensions in the header of the file"""
         for label in labels:
             self.file_object.write(f"{label}\t")
         self.file_object.write("Confidence\n")
@@ -230,6 +237,7 @@ class FileGoalsContent(File):
         self.labels = labels
 
     def write(self):
+        """Writes Goals contents""" 
         if "Goal" in self.node.LTM_cache and self.node.iteration % 100 == 0:
             for goal in self.node.LTM_cache["Goal"]:
                 if goal not in self.created_clients:
@@ -265,7 +273,9 @@ class FileGoalsContent(File):
     
 
 class FileLastIterationGoalsContent(FileGoalsContent):
+    """A file that saves the contents of the Goals at the end of an experiment"""
     def write(self):
+        """Writes Goals contents""" 
         if "Goal" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
             for goal in self.node.LTM_cache["Goal"]:
                 self.create_goal_client(goal)
@@ -298,12 +308,15 @@ class FileLastIterationGoalsContent(FileGoalsContent):
                         self.created_clients[goal] = None
 
 class FileNeighbors(File):
+    """A file that saves the neighbors of each node (Method specific to track the subgoals created by effectance)"""    
     def write_header(self):
+        """Write the header of the file."""
         super().write_header()
         self.file_object.write("Goal\tNeighbor1\tNeighbor2\n")
         self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
     
     def write(self):
+        """Writes neighbors list"""        
         if self.node.iteration == self.node.iterations:
             response = self.ltm_client.send_request(name="")
             nodes = yaml.safe_load(response.data)
@@ -317,12 +330,15 @@ class FileNeighbors(File):
                         self.file_object.write("\n")
 
 class FileNeighborsFull(File):
+    """A file that saves the full neighbor tree at the end of an experiment"""    
     def write_header(self):
+        """Write the header of the file."""
         super().write_header()
         self.file_object.write("Goal\tNeighbor1\tNeighbor2\n")
         self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
     
     def write(self):
+        """Writes neighbors list for each node""" 
         if self.node.iteration == self.node.iterations:
             response = self.ltm_client.send_request(name="")
             nodes = yaml.safe_load(response.data)

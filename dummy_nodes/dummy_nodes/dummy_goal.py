@@ -1,6 +1,9 @@
 from cognitive_nodes.goal import GoalMotiven
 
 class GoalDummy(GoalMotiven):
+    """
+    Dummy Goal class: A goal that is never rewarded.
+    """
     def __init__(self, name='goal', class_name='cognitive_nodes.goal.Goal', **params):
         super().__init__(name, class_name, **params)
     

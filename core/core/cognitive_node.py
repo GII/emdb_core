@@ -36,9 +36,9 @@ class CognitiveNode(Node):
 
         self.perception = None
 
-        # self.threshold = threshold
         self.neighbors = [] # List of dics, like [{"name": "pnode1", "node_type": "PNode"}, {"name": "cnode1", "node_type": "CNode"}]
         
+        #List that contains subscribers of the activation of the node's neighbors
         self.activation_inputs={}
         self.activation_topic = True
         self.activation = Activation()
@@ -51,6 +51,7 @@ class CognitiveNode(Node):
         for key, value in params.items():
             setattr(self, key, value)
 
+        #Callback groups to separate between service requests, service calls and activation callbacks
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_activation=MutuallyExclusiveCallbackGroup()
@@ -99,11 +100,12 @@ class CognitiveNode(Node):
             self.delete_neighbor_callback, callback_group=self.cbgroup_server
         )
 
+        #Periodic publishing of activation
         self.activation_publish_timer=self.create_timer(0.01, self.publish_activation_callback, callback_group=self.cbgroup_activation)
 
+        #Service clients to add or delete nodes from the LTM
         service_name_add_LTM = 'ltm_0' + '/add_node' # TODO choose LTM ID
         self.add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name_add_LTM, self.cbgroup_client)
-
         service_name_delete_LTM = 'ltm_0' + '/delete_node' # TODO: choose the ltm ID
         self.delete_node_client = ServiceClientAsync(self, DeleteNodeFromLTM, service_name_delete_LTM, self.cbgroup_client)
     
@@ -166,13 +168,21 @@ class CognitiveNode(Node):
         """
         Calculate the node's activation for the given perception.
         :param perception: The perception for which the activation will be calculated.
-        :type perception: float
+        :type perception: dict
         :param activation_list: List of activations considered in the node
         :type activation_list: dict
         """
         raise NotImplementedError
     
     def extract_oldest_timestamp(self, activation_list):
+        """
+        Helper method to obtain the oldest timestamp from all the activations that the node has recieved.
+
+        :param activation_list: Dictionary with the activation of multiple nodes. 
+        :type activation_list: dict
+        :return: Timestamp message with the oldest activation and the node that produced it.
+        :rtype: Tuple (builtin_interfaces.msg.Time, str)
+        """        
         timestamp_dict={node_name: Time.from_msg(activation_list[node_name]['data'].timestamp).nanoseconds for node_name in activation_list}
         if timestamp_dict:
             oldest_node = min(zip(timestamp_dict.values(), timestamp_dict.keys()))[1]
@@ -183,6 +193,13 @@ class CognitiveNode(Node):
         return (oldest_timestamp, oldest_node) 
 
     def calculate_activation_prod(self, activation_list):
+        """
+        Calculates the activation of the node by multiplying the activation of the nodes in the activation_list. 
+        The timestamp of the resulting activation will be the oldest timestamp of the nodes in the list.
+
+        :param activation_list: Dictionary with the activation of multiple nodes. 
+        :type activation_list: dict
+        """        
         node_activations = [activation_list[node_name]['data'].activation for node_name in activation_list]
         timestamp, _ = self.extract_oldest_timestamp(activation_list)
         if len(node_activations)!=0:
@@ -194,6 +211,13 @@ class CognitiveNode(Node):
         self.activation.timestamp=timestamp
 
     def calculate_activation_max(self, activation_list):
+        """
+        Calculates the activation of the node by multiplying the activation of the nodes in the activation_list. 
+        The timestamp of the resulting activation will be the oldest timestamp of the nodes in the list.
+
+        :param activation_list: Dictionary with the activation of multiple nodes. 
+        :type activation_list: dict
+        """        
         node_activations = [activation_list[node_name]['data'].activation for node_name in activation_list]
         timestamp, _ = self.extract_oldest_timestamp(activation_list)
         if len(node_activations)!=0:
@@ -205,15 +229,15 @@ class CognitiveNode(Node):
         self.activation.timestamp=timestamp
 
     def publish_activation(self, activation: Activation):
-            """
-            Publish the activation of this node.
-            :param activation: The activation to be published.
-            :type activation: float
-            """
-            self.publish_activation_topic.publish(activation)
-            self.get_logger().debug("Activation for " + str(activation.node_type) + str(activation.node_name) +
-                                ": " + str(activation.activation))
-        
+        """
+        Publish the activation of this node.
+        :param activation: The activation to be published.
+        :type activation: float
+        """
+        self.publish_activation_topic.publish(activation)
+        self.get_logger().debug("Activation for " + str(activation.node_type) + str(activation.node_name) +
+                            ": " + str(activation.activation))
+    
     def add_neighbor_callback(self, request, response):
         """
         Add a neighbor to the nodes neighbors collection
@@ -318,7 +342,10 @@ class CognitiveNode(Node):
         response.activation_topic = activation_topic
         return response
     
-    async def publish_activation_callback(self): #Timed publish of the activation value
+    async def publish_activation_callback(self):
+        """
+        Timed publish of the activation value. This method will calculate the activation based on the neighbor's activation, and then publish it in the corresponding topic.
+        """        
         if self.activation_topic:
             if len(self.activation_inputs)==0: #Calculates activation when there are no inputs configured (Support for custom nodes)
                 updated=True
@@ -335,7 +362,13 @@ class CognitiveNode(Node):
                     self.activation_inputs[node_name]['updated']=False
             self.publish_activation(self.activation)
 
-    def create_activation_input(self, node: dict): #Adds a node from the activation inputs list. By default reads activations.
+    def create_activation_input(self, node: dict):
+        """
+        Adds a node to the activation inputs list.
+
+        :param node: Dictionary with the information of the node {'name': <name>, 'node_type': <node_type>}
+        :type node: dict
+        """        
         name=node['name']
         node_type=node['node_type']
         if node_type != 'Perception':
@@ -349,17 +382,35 @@ class CognitiveNode(Node):
             else:
                 self.get_logger().error(f'Tried to add {name} to activation inputs more than once')
     
-    def delete_activation_input(self, node: dict): #Deletes a node from the activation inputs list. By default reads activations.
+    def delete_activation_input(self, node: dict):
+        """
+        Deletes a node from the activation inputs list.
+
+        :param node: Dictionary with the information of the node {'name': <name>, 'node_type': <node_type>}
+        :type node: dict
+        """ 
         name=node['name']
         if name in self.activation_inputs:
             self.destroy_subscription(self.activation_inputs[name]['subscriber'])
             self.activation_inputs.pop(name)
     
     def configure_activation_inputs(self, neighbor_list):
+        """
+        Populates the activation list from a list of neighbors.
+
+        :param neighbor_list: Dictionary with the information of the node [{'name': <name>, 'node_type': <node_type>}, .... ]
+        :type neighbor_list: dict
+        """ 
         for neighbor in neighbor_list:
             self.create_activation_input(neighbor)
 
     def read_activation_callback(self, msg: Activation):
+        """
+        Callback to read the activation of a neighbor node.
+
+        :param msg: _description_
+        :type msg: cognitive_nodes_interfaces.msg.Activation
+        """        
         node_name=msg.node_name
         if node_name in self.activation_inputs:
             if Time.from_msg(msg.timestamp).nanoseconds>Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds:
@@ -369,14 +420,46 @@ class CognitiveNode(Node):
                 self.get_logger().warn(f'Detected jump back in time, activation of node: {node_name} ({msg.node_type})')
         
     def add_neighbor_client(self, node_name, neighbor_name):
+        """
+        Client that adds a node as a neighbor of another node.
+
+        :param node_name: Node to which the neighbor will be added.
+        :type node_name: str
+        :param neighbor_name: Node that will be added as neighbor
+        :type neighbor_name: str
+        :return: Future with service's response
+        :rtype: Future
+        """        
         response=self.update_neighbor_client(node_name, neighbor_name, True)
         return response
 
     def delete_neighbor_client(self, node_name, neighbor_name):
+        """
+        Client that deletes a node as a neighbor of another node.
+
+        :param node_name: Node to which the neighbor will be deleted.
+        :type node_name: str
+        :param neighbor_name: Node that will be deleted as neighbor
+        :type neighbor_name: str
+        :return: Future with service's response
+        :rtype: Future
+        """    
         response=self.update_neighbor_client(node_name, neighbor_name, False)
         return response
 
     def update_neighbor_client(self, node_name, neighbor_name, operation):
+        """
+        Calls the /update_neighbor service in the LTM.
+
+        :param node_name: Node whose neighbor list will be modified.
+        :type node_name: str
+        :param neighbor_name: Node that will be added/deleted as neighbor.
+        :type neighbor_name: str
+        :param operation: Selects between adding (True) or deleting (False) neighbor.
+        :type operation: bool
+        :return: Future with service's response
+        :rtype: Future
+        """        
         if getattr(self, "LTM_id", None):
             service_name=f"{self.LTM_id}/update_neighbor"
             if service_name not in self.node_clients:

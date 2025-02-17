@@ -85,8 +85,15 @@ def perception_msg_to_dict(msg):
     return perception_dict
 
 def actuation_msg_to_dict(msg):
-    actuation_dict= msg_to_dict(msg)
+    """
+    Transform a ROS message that contains an actuation into a dictionary 
 
+    :param msg: The ROS message with the perception
+    :type msg: cognitve_node_interfaces.msg.Actuation
+    :return: The dictionary with the actuation
+    :rtype: dict
+    """
+    actuation_dict= msg_to_dict(msg)
     return actuation_dict
 
 
@@ -137,25 +144,25 @@ def separate_perceptions(perception):
     return perceptions
 
 def compare_perceptions(input_1, input_2, thresh=0.01):
-        """
-        Return True if both perceptions have the same value. False otherwise.
+    """
+    Return True if both perceptions have the same value. False otherwise.
 
-        :param sensing: Sensing in the current iteration.
-        :type sensing: dict
-        :param old_sensing: Sensing in the last iteration.
-        :type old_sensing: dict
-        :return: Boolean that indicates if there is a sensorial change.
-        :rtype: bool
-        """
+    :param sensing: Sensing in the current iteration.
+    :type sensing: dict
+    :param old_sensing: Sensing in the last iteration.
+    :type old_sensing: dict
+    :return: Boolean that indicates if there is a sensorial change.
+    :rtype: bool
+    """
 
-        for sensor in input_1:
-            for perception_1, perception_2 in zip(input_1[sensor], input_2[sensor]):
-                if isinstance(perception_1, dict):
-                    for attribute in perception_1:
-                        difference = abs(perception_1[attribute] - perception_2[attribute])
-                        if difference > thresh:
-                            return False
-                else:
-                    if abs(perception_1[0] - perception_2[0]) > thresh:
+    for sensor in input_1:
+        for perception_1, perception_2 in zip(input_1[sensor], input_2[sensor]):
+            if isinstance(perception_1, dict):
+                for attribute in perception_1:
+                    difference = abs(perception_1[attribute] - perception_2[attribute])
+                    if difference > thresh:
                         return False
-        return True
+            else:
+                if abs(perception_1[0] - perception_2[0]) > thresh:
+                    return False
+    return True
