@@ -1,5 +1,5 @@
 import importlib
-from cognitive_node_interfaces.msg import Perception, PerceptionParameters
+from cognitive_node_interfaces.msg import Perception, Actuation, ObjectParameters
 
 def class_from_classname(class_name):
     """Return a class object from a class name."""
@@ -19,14 +19,48 @@ def perception_dict_to_msg(perception_dict):
     """
     msg = Perception()
     if perception_dict:
+        dict_to_msg(msg, perception_dict)
+    else:
+        msg.data = []
+    return msg
+
+def actuation_dict_to_msg(actuation_dict):
+    """
+    Transform an actuation dictionary into a ROS message
+
+    :param actuation_dict: Dictionary that contais the actuation signal
+    :type actuation_dict: dict
+    :return: The ROS message with the actuation
+    :rtype: cognitve_node_interfaces.msg.Actuation
+    """
+    msg = Actuation()
+    if actuation_dict:
+        dict_to_msg(msg, actuation_dict)
+    else:
+        msg.data = []
+    return msg
+
+def dict_to_msg(msg, object_dict):
+    """
+    Transform an object dictionary into a ROS message
+
+    :param msg: Message to transform
+    :type msg: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :param object_dict: Dictionary that contais the data
+    :type object_dict: dict
+    :return: The ROS message with the perception
+    :rtype: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    """
+
+    if object_dict:
         msg.layout.data_offset = 0
         msg.layout.dim = []
         len_float = 8 #bytes
-        for sensor, data in perception_dict.items():
+        for object, data in object_dict.items():
             for values in enumerate(data):
-                dimension = PerceptionParameters()
+                dimension = ObjectParameters()
                 dimension.size_stride_units = 'bytes'
-                dimension.sensor = sensor + str(values[0])
+                dimension.object = object + str(values[0])
                 dimension.labels = list(values[1].keys())
                 dimension.size = len(values[1])*len_float #bytes
                 dimension.stride = len_float #bytes
@@ -46,10 +80,32 @@ def perception_msg_to_dict(msg):
     :return: The dictionary with the perceptions
     :rtype: dict
     """
-    perception_dict = {}
+    perception_dict = msg_to_dict(msg)
+
+    return perception_dict
+
+def actuation_msg_to_dict(msg):
+    """
+    Transform a ROS message that contains an actuation into a dictionary 
+
+    :param msg: The ROS message with the perception
+    :type msg: cognitve_node_interfaces.msg.Actuation
+    :return: The dictionary with the actuation
+    :rtype: dict
+    """
+    actuation_dict= msg_to_dict(msg)
+    return actuation_dict
+
+
+def msg_to_dict(msg):
+    """
+    Transform a ROS message that contains an object list into a dictionary
+
+    """
+    dict = {}
     first_value = 0 
     for dim in msg.layout.dim:
-        sensor = dim.sensor[:-1]
+        object = dim.object[:-1]
         labels = dim.labels
         size = dim.size
         stride = dim.stride
@@ -58,14 +114,15 @@ def perception_msg_to_dict(msg):
         values = msg.data[first_value:final_value]
         values_dict = {labels[i]: values[i] for i in range(len(labels))}
 
-        if not sensor in perception_dict.keys():
-            perception_dict[sensor] = [values_dict]
+        if not object in dict.keys():
+            dict[object] = [values_dict]
         else:
-            perception_dict[sensor].append(values_dict)
+            dict[object].append(values_dict)
             
         first_value += num_elements
 
-    return perception_dict
+    return dict
+
 
 def separate_perceptions(perception):
     """
@@ -85,3 +142,27 @@ def separate_perceptions(perception):
             perceptions.append(perception_line)
 
     return perceptions
+
+def compare_perceptions(input_1, input_2, thresh=0.01):
+    """
+    Return True if both perceptions have the same value. False otherwise.
+
+    :param sensing: Sensing in the current iteration.
+    :type sensing: dict
+    :param old_sensing: Sensing in the last iteration.
+    :type old_sensing: dict
+    :return: Boolean that indicates if there is a sensorial change.
+    :rtype: bool
+    """
+
+    for sensor in input_1:
+        for perception_1, perception_2 in zip(input_1[sensor], input_2[sensor]):
+            if isinstance(perception_1, dict):
+                for attribute in perception_1:
+                    difference = abs(perception_1[attribute] - perception_2[attribute])
+                    if difference > thresh:
+                        return False
+            else:
+                if abs(perception_1[0] - perception_2[0]) > thresh:
+                    return False
+    return True

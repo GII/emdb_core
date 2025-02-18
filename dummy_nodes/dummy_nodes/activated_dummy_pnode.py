@@ -21,7 +21,14 @@ class ActivatedDummyPNode(PNode):
         """
         super().__init__(name, class_name, space_class, space, **params)
 
-    def calculate_activation(self, perception=None):
+    def send_pnode_space_callback(self, request, response):
+        response.labels = []
+        response.data = []
+        response.confidences = []
+
+        return response
+
+    def calculate_activation(self, perception=None, activation_list=None):
         """
         Always returns an activation of 1.0
 
@@ -30,7 +37,6 @@ class ActivatedDummyPNode(PNode):
         :return: Returns the activation of the PNode. Always 1.0
         :rtype: float
         """
-        self.activation = 1.0
-        if self.activation_topic:
-            self.publish_activation(self.activation)
+        self.activation.activation = 1.0
+        self.activation.timestamp = self.get_clock().now().to_msg()
         return self.activation

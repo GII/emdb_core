@@ -1,19 +1,14 @@
-
-import argparse
+import pandas as pd
+import ast
+import matplotlib.pyplot as plt
+import magic
 import sys
 import bz2
-import magic
+import argparse
+import os
+import numpy as np
 
-
-def strtobool(val):
-    """Convert a string representation of truth to true (1) or false (0)."""
-    val = val.lower()
-    if val in ("y", "yes", "t", "true", "on", "1"):
-        return 1
-    if val in ("n", "no", "f", "false", "off", "0"):
-        return 0
-    raise ValueError(f"invalid truth value {val}")
-
+#TODO: Could be better to create a class to send less variables between functions
 
 def open_file(name):
     """Open a file using its magic number to identify its contents."""
@@ -25,9 +20,171 @@ def open_file(name):
     print("Unsupported file!!!")
     sys.exit(1)
 
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0)."""
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    if val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    raise ValueError(f"invalid truth value {val}")
 
-def generate_grouped_statistics():
-    """Calculate several statistics using bunchs of iterations."""
+def obtain_rewards_dict(file):
+    """Read the goal rewards from goodness files"""
+    f = open_file(file)
+
+    dataset = pd.read_csv(f, delimiter='\t', header=0)
+
+    rewards_str = dataset["Goal reward list"].to_list()
+    rewards = [ast.literal_eval(goal) for goal in rewards_str]
+
+
+    rewards_dataset = pd.DataFrame(rewards)
+
+    iterations = dataset["Iteration"].to_list()
+    changes = dataset["Sensorial changes"].to_list()
+    rewards_per_goal = rewards_dataset.to_dict(orient = 'list')
+    
+    return iterations, rewards_per_goal, changes
+
+
+def generate_grouped_statistics(goal_name, iterations, rewards, changes, max_ite, base_file_name):
+    """Calculate goals statistics using bunchs of iterations."""
+    data = []
+    accumulated_reward = 0.0
+    no_change_iterations = 0
+    rewarded_iterations = 0
+    
+    if len(iterations) != len(rewards) or len(rewards) != len(changes):
+        raise ValueError("Error. Dimensions do not match")
+
+    for i in range(len(iterations)):
+        iteration = int(iterations[i])
+        reward = float(rewards[i])
+        if np.isnan(reward):
+            reward = 0.0
+        change = int(changes[i])
+        accumulated_reward += reward
+        if not change:
+            no_change_iterations+=1
+        if reward > 0.01:
+            rewarded_iterations+=1
+        
+        if iteration % max_ite == 0 and iteration > 0:
+            data.append({
+                "Iteration":iteration,
+                "Avg_reward":accumulated_reward/max_ite*100,
+                "NoChange_Iterations":no_change_iterations,
+                "Rewarded_Iterations":rewarded_iterations
+            })
+
+            accumulated_reward = 0.0
+            no_change_iterations = 0
+            rewarded_iterations = 0
+
+    df = pd.DataFrame(data)
+    file_name = f"{goal_name}_{base_file_name}.csv"
+    if os.path.exists(file_name):
+        print(f"File already exists: {file_name}")
+    else:
+        df.to_csv(file_name, sep = "\t", index=False)
+
+
+    data_to_plot = df.to_dict(orient="list")
+    return data_to_plot
+
+def generate_accumulated_statistics(all_data, base_file_name):
+    iterations = next(iter(all_data[0].values()))['Iteration']
+    avg_rewards = [goal[next(iter(goal))]['Avg_reward'] for goal in all_data]
+    accumulated_avg_rewards = [sum(vals) for vals in zip(*avg_rewards)]
+    accumulated_statistics = {
+        "Iteration":iterations,
+        "Avg_reward":accumulated_avg_rewards
+    }
+    df = pd.DataFrame(accumulated_statistics)
+    file_name = f"accumulated_reward_{base_file_name}.csv"
+    if os.path.exists(file_name):
+        print(f"File already exists: {file_name}")
+    else:
+        df.to_csv(file_name, sep = "\t", index=False)
+
+    return accumulated_statistics
+
+
+def plot_data(all_data, accumulated_data, max_ite, figures, show_figures, base_file_name):
+    """Plot the generated statistics."""
+
+    iterations = next(iter(all_data[0].values()))['Iteration']
+    if figures == 3:
+        for data_dict in all_data:
+            for data in data_dict.values():
+                goal_name = list(data_dict.keys())[0]
+                plt.figure(figsize=(16,10))
+                plt.title(goal_name, fontsize = 18)
+                plt.xlabel("Iterations", fontsize = 15)
+                plt.ylabel("% Success", fontsize = 15)
+                plt.xlim(0,iterations[-1])
+                plt.xticks(range(0, iterations[-1]+1, 1000))
+                plt.ylim(-2,100)
+                plt.yticks(range(0, 101, 10))
+                plt.tick_params(labelsize = 12)
+                plt.plot(iterations, data["Avg_reward"], label = goal_name)
+                plt.legend(loc="center right", fontsize = 15)
+                plt.grid(linewidth = 0.3)
+                img_name = f"{goal_name}_n{max_ite}_{base_file_name}.svg"
+                if os.path.exists(img_name):
+                    print(f"File already exists: {img_name}")
+                else:
+                    plt.savefig(img_name)
+                if show_figures:
+                    plt.show()
+
+    if figures == 3 or figures == 2:
+        plt.figure(figsize=(16,10))
+        plt.title("All goals", fontsize = 18)
+        plt.xlabel("Iterations", fontsize = 15)
+        plt.ylabel("% Success", fontsize = 15)
+        plt.xlim(0,iterations[-1])
+        plt.xticks(range(0, iterations[-1]+1, 1000))
+        plt.ylim(-2,100)
+        plt.yticks(range(0, 101, 10))
+        plt.tick_params(labelsize = 12)
+        for data_dict in all_data:
+            for data in data_dict.values():
+                goal_name = list(data_dict.keys())[0]
+                plt.plot(iterations, data["Avg_reward"], label = goal_name)
+        plt.legend(loc="center right", fontsize = 15)
+        plt.grid(linewidth = 0.3)
+        img_name = f"all_goals_n{max_ite}_{base_file_name}.svg"
+        if os.path.exists(img_name):
+            print(f"File already exists: {img_name}")
+        else:
+            plt.savefig(img_name)
+        if show_figures:
+            plt.show()
+
+    if figures == 3 or figures == 2 or figures == 1:
+        plt.figure(figsize=(16,10))
+        plt.title("Accumulated reward", fontsize = 18)
+        plt.xlabel("Iterations", fontsize = 15)
+        plt.ylabel("% Success", fontsize = 15)
+        plt.xlim(0,iterations[-1])
+        plt.xticks(range(0, iterations[-1]+1, 1000))
+        plt.ylim(-2,100)
+        plt.yticks(range(0, 101, 10))
+        plt.tick_params(labelsize = 12)
+        plt.plot(iterations, accumulated_data['Avg_reward'], label = 'Goals accumulated')
+        plt.legend(loc="center right", fontsize = 15)
+        plt.grid(linewidth = 0.3)
+        img_name = f"accumulated_reward_n{max_ite}_{base_file_name}.svg"
+        if os.path.exists(img_name):
+            print(f"File already exists: {img_name}")
+        else:
+            plt.savefig(img_name)
+        if show_figures:
+            plt.show()
+
+def main():
     parser = argparse.ArgumentParser(
         description="Calculate several statistics for LTM experiments using bunchs of iterations"
     )
@@ -40,43 +197,47 @@ def generate_grouped_statistics():
         type=int,
         help="Number of consecutive iterations used to calculate the statistics",
     )
+
+    parser.add_argument(
+        "-fg",
+        "--figures",
+        type=int,
+        default = 2,
+        help="3: Create all the figures // 2: Create accumulated reward and all goals figures // 1: Create only the accumulated reward figure // 0: Create no figures"
+    )
+
+    parser.add_argument(
+        "-s",
+        "--show_figures",
+        default = "true",
+        help="Select if the user wants to show the figures after execution"
+    )
+
+
     args = parser.parse_args()
     kwargs = vars(args)
-    iterations = kwargs["iterations"]
     file_name = kwargs["file"]
-    if (iterations is None) or (file_name is None):
-        parser.print_help()
-    else:
-        with open_file(file_name) as stat_file:
-            stat_file.readline()
-            accumulated_reward = 0.0
-            nochange_iterations = 0
-            rewarded_iterations = 0
-            for line in stat_file:
-                iteration, _, _, reward, _, changes, c_nodes = line.split()
-                iteration = int(iteration)
-                reward = float(reward)
-                changes = strtobool(changes)
-                c_nodes = int(c_nodes)
-                accumulated_reward += reward
-                if not changes:
-                    nochange_iterations += 1
-                if reward > 0.01:
-                    rewarded_iterations += 1
-                if iteration % iterations == 0 and iteration > 0:
-                    print(
-                        str(iteration)
-                        + "\t"
-                        + str(accumulated_reward / iterations)
-                        + "\t"
-                        + str(nochange_iterations)
-                        + "\t"
-                        + str(rewarded_iterations)
-                    )
-                    accumulated_reward = 0.0
-                    nochange_iterations = 0
-                    rewarded_iterations = 0
+    max_ite = kwargs["iterations"]
+    figures = kwargs["figures"]
+    show_figures = strtobool(kwargs["show_figures"])
 
+    base_file_name, _  = os.path.splitext(file_name)
 
+    all_data = []
+    iterations, rewards_per_goal, changes = obtain_rewards_dict(file_name)
+    for goal in rewards_per_goal:
+        data_to_plot = generate_grouped_statistics(goal, iterations, rewards_per_goal[goal], changes, max_ite, base_file_name)
+        data_to_plot_dict = {goal:data_to_plot}
+        all_data.append(data_to_plot_dict)
+
+    accumulated_data = generate_accumulated_statistics(all_data, base_file_name)
+
+    if figures != 0:
+        if figures in [1,2,3]: 
+            plot_data(all_data, accumulated_data, max_ite, figures, show_figures, base_file_name)
+        else:
+            parser.print_help()
+        
+        
 if __name__ == "__main__":
-    generate_grouped_statistics()
+    main()

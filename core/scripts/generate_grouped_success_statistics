@@ -50,6 +50,7 @@ def generate_grouped_statistics():
     else:
         with open_file(file_name) as stat_file:
             stat_file.readline()
+            print("Iteration\tP-Node\tP-Node Success\tP-Node Activations\t% Success")
             pnodes_activations = {}
             pnodes_success = {}
             for line in stat_file:

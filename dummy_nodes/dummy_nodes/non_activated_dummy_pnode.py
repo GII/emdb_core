@@ -21,7 +21,7 @@ class NonActivatedDummyPNode(PNode):
         """
         super().__init__(name, class_name, space_class, space, **params)
 
-    def calculate_activation(self, perception=None):
+    def calculate_activation(self, perception=None, activation_list=None):
         """
         Always returns an activation of 0.0
 

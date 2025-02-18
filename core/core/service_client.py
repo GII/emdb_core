@@ -1,3 +1,4 @@
+import random
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -17,7 +18,7 @@ class ServiceClient(Node):
         :param service_name: The name of the ROS 2 service.
         :type service_name: str
         """        
-        self.client_name = service_name.replace("/", "_") + '_client'
+        self.client_name = service_name.replace("/", "_") + '_client_' + f"{random.randint(0, 999999):06}"
         super().__init__(self.client_name)
         self.cbgroup=MutuallyExclusiveCallbackGroup()
         self.cli = self.create_client(service_type, service_name, callback_group=self.cbgroup)
@@ -41,8 +42,22 @@ class ServiceClient(Node):
         return self.future.result()
     
 class ServiceClientAsync():
-
+    """
+    A generic service client class.
+    """
     def __init__(self, node:Node, service_type, service_name, callback_group) -> None:
+        """
+        Constructor for the ServiceClient class.
+
+        :param node: ROS2 node that will host the service client
+        :type node: Node
+        :param service_type: Message Interface
+        :type service_type: Any ROS2 service interface
+        :param service_name: Name of the service
+        :type service_name: str
+        :param callback_group: Callback group to assign the service client
+        :type callback_group: rclpy.callback_groups.*
+        """        
         self.node=node
         self.cli = self.node.create_client(service_type, service_name, callback_group=callback_group)
         while not self.cli.wait_for_service(timeout_sec=1.0):

@@ -22,7 +22,7 @@ class RandomDummyPNode(PNode):
         """
         super().__init__(name, class_name, space_class, space, **params)
 
-    def calculate_activation(self, perception=None):
+    def calculate_activation(self, perception=None, activation_list=None):
         """
         Return a random activation
 

@@ -5,9 +5,10 @@ import asyncio
 from rclpy.node import Node
 from std_msgs.msg import String
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.time import Time
 from rclpy import spin_until_future_complete
 
-from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, GetNodeFromLTM, ReplaceNodeFromLTM, SetChangesTopic
+from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, GetNodeFromLTM, ReplaceNodeFromLTM, SetChangesTopic, UpdateNeighbor
 from cognitive_node_interfaces.srv import AddNeighbor, DeleteNeighbor
 from core.service_client import ServiceClient, ServiceClientAsync
 
@@ -27,6 +28,7 @@ class LTM(Node):
         add_node_service (Service): Service to add new cognitive nodes.
         replace_node_service (Service): Service to replace existing cognitive nodes.
         delete_node_service (Service): Service to delete cognitive nodes.
+        update_neighbors_service (Service): Service to update the neighbors list of a node.
         get_node_service (Service): Service to retrieve data of cognitive nodes.
         set_changes_topic_service (Service): Service to set the changes topic.
     """    
@@ -40,10 +42,10 @@ class LTM(Node):
         """        
         super().__init__('ltm_' + str(id))
         self.id = id
-        self.changes_topic = True
-        # TODO Remove ANode and BNode
+        self.changes_topic = False
         # TODO Create keys from config file
-        self.cognitive_nodes = {'ANode': {}, 'BNode': {}, 'CNode': {}, 'Drive': {}, 'Goal': {}, 'Need': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
+        self.cognitive_nodes = {'CNode': {}, 'Drive': {}, 'Goal': {}, 'Need': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
+
         
         # State topic
         self.state_publisher = self.create_publisher(
@@ -78,6 +80,13 @@ class LTM(Node):
             self.delete_node_callback, callback_group=self.cbgroup_server
         )
 
+        # Change connection
+        self.update_neighbors_service = self.create_service(
+            UpdateNeighbor,
+            'ltm_' + str(self.id) + '/update_neighbor',
+            self.update_neighbor_callback, callback_group=self.cbgroup_server
+        )
+
         # Get node service
         self.get_node_service = self.create_service(
             GetNodeFromLTM,
@@ -93,6 +102,7 @@ class LTM(Node):
         )
 
     def publish_state(self):
+        """Publishes the LTM state in the state topic."""        
         if(self.changes_topic):
             msg = String()
             msg.data = self.cognitive_nodes.__str__()
@@ -100,26 +110,6 @@ class LTM(Node):
             self.get_logger().debug(f"State: {msg.data}")
 
     # region Properties
-    @property
-    def a_nodes(self): # TODO Remove this
-        """
-        Get all cognitive nodes of type 'ANode' from the LTM.
-
-        :return: A list of 'ANode' nodes.
-        :rtype: list
-        """
-        return self.cognitive_nodes.get('ANode', [])
-    
-    @property
-    def b_nodes(self): # TODO Remove this
-        """
-        Get all cognitive nodes of type 'BNode' from the LTM.
-
-        :return: A list of 'BNode' nodes.
-        :rtype: list
-        """
-        return self.cognitive_nodes.get('BNode', [])
-    
     @property
     def drives(self):
         """
@@ -329,6 +319,7 @@ class LTM(Node):
             response.data = ""
             return response
     
+    
     def set_changes_topic_callback(self, request, response):
         """
         Callback function for the 'set_changes_topic' service.
@@ -350,6 +341,52 @@ class LTM(Node):
         response.changes_topic = changes_topic
         return response
     
+    async def update_neighbor_callback(self, request, response):
+        self.get_logger().info(f"Processing neighbor change")
+        success=False
+        node_name=request.node_name
+        neighbor_name=request.neighbor_name
+        operation=request.operation
+        #Get information from the nodes
+        node_dict=self.get_node_dict(node_name)
+        neighbor_dict=self.get_node_dict(neighbor_name)
+        #Return error if nodes are not found
+        if not node_dict or not neighbor_dict:
+            if not node_dict:
+                self.get_logger().error(f"Node {node_name} not found in LTM")
+            if not neighbor_dict:
+                self.get_logger().error(f"Node {neighbor_name} not found in LTM")
+        else:
+            #Perform neighbor operation
+            neighbor_type=self.get_node_type(neighbor_name)
+            neigh_dict={'name': neighbor_name, 'node_type': neighbor_type}
+            if operation:
+                if neigh_dict not in node_dict['neighbors']:
+                    node_dict['neighbors'].append(neigh_dict)
+                    await self.add_neighbor(neighbor_name, neighbor_type, node_name)
+                    success=True
+                    self.get_logger().info(f"Successfully added {neighbor_name} as neighbor of {node_name}")
+                else:
+                    success=False
+                    self.get_logger().error(f"{neighbor_name} is already a neighbor of {node_name}")
+            else:
+                i=0
+                if neigh_dict in node_dict['neighbors']: 
+                    for neighbor in node_dict['neighbors']:
+                        if neighbor['name']==neighbor_name:
+                            del node_dict['neighbors'][i]
+                            success=True
+                        else:
+                            i+=1
+                    await self.delete_neighbor(neighbor_name, neighbor_type, node_name)
+                    self.get_logger().info(f"Successfully removed {neighbor_name} as neighbor of {node_name}")
+                else:
+                    success=False
+                    self.get_logger().error(f"{neighbor_name} is not a neighbor of {node_name}")
+            self.publish_state()
+        response.success=success
+        return response
+        
     # endregion Callbacks
     
     # region CRUD operations
@@ -366,42 +403,41 @@ class LTM(Node):
         """
         self.cognitive_nodes[node_type][node_name] = node_data
         node_dict={'name': node_name, 'node_type': node_type}
-
-        #TODO: Neighbor handling
+        neighbors=[]
 
         #If neighbors have not been assiged to the node in creation time, assign neighbors according to type
         if not node_data['neighbors']:
+            """
+            #REMOVING THIS TO TEST DIRECTED ACTIVATIONS
             #Perceptions are linked to Goals, World Models and Policies
             if node_type=='Perception':
+                
                 goals= [{'name': goal, 'node_type': 'Goal'} for goal in self.cognitive_nodes['Goal']]
                 world_models= [{'name': WM, 'node_type': 'WorldModel'} for WM in self.cognitive_nodes['WorldModel']]
                 policies= [{'name': policy, 'node_type': 'Policy'} for policy in self.cognitive_nodes['Policy']]
                 neighbors=goals+world_models+policies
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors
+            """
             #Any other node type is linked to all perceptions
-            else:
+            if node_type!='Perception':
                 neighbors=[{'name': perception, 'node_type': 'Perception'} for perception in self.cognitive_nodes['Perception']]
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors 
 
             #Calls AddNode service of the new node to add the required neighbors in node's internal dictionary
-            for neighbor in neighbors: #TODO: Fix service calls to allow calling this method
-                self.get_logger().debug(f'AWAIT START: Adding neighbor {neighbor["name"]} to new node {node_name}')
+            for neighbor in neighbors: 
                 await self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
-                self.get_logger().debug(f'AWAIT FINISH: Adding neighbor {neighbor["name"]} to new node {node_name}')
 
 
+        """
+        #REMOVING THIS TO TEST DIRECTED ACTIVATIONS
         #Add the new node to the dictionary of the corresponding neighbors
         for neighbor in self.cognitive_nodes[node_type][node_name]['neighbors']:
             neighbor_name=neighbor['name']
-            self.get_logger().debug(f'AWAIT START: Adding new node {node_name}  as neighbor of {neighbor_name}')
             await self.add_neighbor(node_name,node_type,neighbor_name)
-            self.get_logger().debug(f'AWAIT FINISH: Adding new node {node_name}  as neighbor of {neighbor_name}')
-
-
             for neighbor_type in self.cognitive_nodes:
                 if neighbor_name in self.cognitive_nodes[neighbor_type]:
                     self.cognitive_nodes[neighbor_type][neighbor_name]['neighbors'].append(node_dict)
-
+        """
         self.publish_state()
     
     def delete_node(self, node_type, node_name):
@@ -443,6 +479,19 @@ class LTM(Node):
         """
         return node_type in self.cognitive_nodes
     
+    def get_node_dict(self, name, default=None):
+        data_dic=default
+        for node_type in self.cognitive_nodes:
+            if name in self.cognitive_nodes[node_type]:
+                data_dic = self.cognitive_nodes[node_type][name]
+        return data_dic
+    
+    def get_node_type(self, name):
+        for node_type in self.cognitive_nodes:
+            if name in self.cognitive_nodes[node_type]:
+                return node_type
+        return None
+    
     # endregion CRUD operations
 
     async def add_neighbor(self, neighbor_name, neighbor_type, service_node_name):
@@ -451,6 +500,14 @@ class LTM(Node):
             self.node_clients[service_name]=ServiceClientAsync(self, AddNeighbor, service_name, callback_group=self.cbgroup_client)
         result = await self.node_clients[service_name].send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
         return result
+    
+    async def delete_neighbor(self, neighbor_name, neighbor_type, service_node_name):
+        service_name = 'cognitive_node/' + service_node_name + '/delete_neighbor'
+        if service_name not in self.node_clients:
+            self.node_clients[service_name]=ServiceClientAsync(self, DeleteNeighbor, service_name, callback_group=self.cbgroup_client)
+        result = await self.node_clients[service_name].send_request_async(neighbor_name=neighbor_name, neighbor_type=neighbor_type)
+        return result
+    
 
 def main(args=None):
     rclpy.init()

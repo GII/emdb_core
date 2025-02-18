@@ -1,0 +1,5 @@
+string node_name
+string neighbor_name
+bool operation #0:Remove, 1:Add
+---
+bool success
