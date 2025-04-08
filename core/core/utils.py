@@ -1,4 +1,5 @@
 import importlib
+import math
 from cognitive_node_interfaces.msg import Perception, Actuation, ObjectParameters
 
 def class_from_classname(class_name):
@@ -57,16 +58,21 @@ def dict_to_msg(msg, object_dict):
         msg.layout.dim = []
         len_float = 8 #bytes
         for object, data in object_dict.items():
-            for values in enumerate(data):
+            for index, values in enumerate(data):
                 dimension = ObjectParameters()
                 dimension.size_stride_units = 'bytes'
-                dimension.object = object + str(values[0])
-                dimension.labels = list(values[1].keys())
-                dimension.size = len(values[1])*len_float #bytes
+                dimension.object = object + str(index)
+                dimension.labels = list(values.keys())
+                dimension.size = len(values)*len_float #bytes
                 dimension.stride = len_float #bytes
                 msg.layout.dim.append(dimension)
-                for value in values[1].values():
-                    msg.data.append(value)
+                for value in values.values():
+                    if math.isnan(value):
+                        msg.is_valid.append(False)
+                        msg.data.append(0.0)
+                    else:
+                        msg.is_valid.append(True)
+                        msg.data.append(value)
     else:
         msg.data = []
     return msg
@@ -112,7 +118,8 @@ def msg_to_dict(msg):
         num_elements = size//stride
         final_value = num_elements + first_value
         values = msg.data[first_value:final_value]
-        values_dict = {labels[i]: values[i] for i in range(len(labels))}
+        flags = msg.is_valid[first_value:final_value]
+        values_dict = {labels[i]: values[i] if flags[i] else float('nan') for i in range(len(labels))}
 
         if not object in dict.keys():
             dict[object] = [values_dict]
