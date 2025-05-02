@@ -1,6 +1,7 @@
 import importlib
 import math
 from cognitive_node_interfaces.msg import Perception, Actuation, ObjectParameters
+from enum import Enum
 
 def class_from_classname(class_name):
     """Return a class object from a class name."""
@@ -173,3 +174,30 @@ def compare_perceptions(input_1, input_2, thresh=0.01):
                 if abs(perception_1[0] - perception_2[0]) > thresh:
                     return False
     return True
+
+class EncodableDecodableEnum(Enum):
+    @classmethod
+    def encode(cls, value: str, normalized=True) -> float:
+        """
+        Encodes a string to a normalized class value.
+        """
+        value = value.upper().replace(" ", "_")
+        if value not in cls.__members__:
+            raise ValueError(f"{value} is not a valid member of {cls.__name__}")
+        if normalized:
+            return cls[value].value / (len(cls) - 1)
+        else:
+            return cls[value].value
+    @classmethod
+    def decode(cls, value, normalized=True) -> str:
+        """
+        Decodes a normalized class value back to the corresponding string.
+        """
+        if normalized:
+            index = round(value * (len(cls) - 1))
+        else:
+            index = int(value)
+        for member in cls:
+            if member.value == index:
+                return member.name
+        raise ValueError(f"No matching class for normalized value {value}")
