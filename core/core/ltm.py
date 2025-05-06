@@ -105,7 +105,9 @@ class LTM(Node):
         """Publishes the LTM state in the state topic."""        
         if(self.changes_topic):
             msg = String()
-            msg.data = self.cognitive_nodes.__str__()
+            data_dic = self.cognitive_nodes
+            data= yaml.dump(data_dic)
+            msg.data = data
             self.state_publisher.publish(msg)
             self.get_logger().debug(f"State: {msg.data}")
 
