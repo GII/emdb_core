@@ -33,8 +33,8 @@ class ServiceClient(Node):
         :param kwargs: Keyword arguments representing the request parameters.
         :type kwargs: dict
         :return: The response from the service.
-        :rtype: type
-        """        
+        :rtype: service_type.Response
+        """
         for key, value in kwargs.items():
             setattr(self.req, key, value)
         self.future = self.cli.call_async(self.req)
@@ -49,13 +49,13 @@ class ServiceClientAsync():
         """
         Constructor for the ServiceClient class.
 
-        :param node: ROS2 node that will host the service client
-        :type node: Node
-        :param service_type: Message Interface
+        :param node: ROS2 node that will host the service client.
+        :type node: rclpy.node.Node
+        :param service_type: Message Interface.
         :type service_type: Any ROS2 service interface
-        :param service_name: Name of the service
+        :param service_name: Name of the service.
         :type service_name: str
-        :param callback_group: Callback group to assign the service client
+        :param callback_group: Callback group to assign the service client.
         :type callback_group: rclpy.callback_groups.*
         """        
         self.node=node
@@ -71,7 +71,7 @@ class ServiceClientAsync():
         :param kwargs: Keyword arguments representing the request parameters.
         :type kwargs: dict
         :return: The response from the service.
-        :rtype: type
+        :rtype: service_type.Response
         """        
         for key, value in kwargs.items():
             setattr(self.req, key, value)

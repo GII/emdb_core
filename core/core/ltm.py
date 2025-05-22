@@ -38,7 +38,7 @@ class LTM(Node):
         Initialize the LTM node.
 
         :param id: The identifier for this LTM instance.
-        :type id: str
+        :type id: int
         """        
         super().__init__('ltm_' + str(id))
         self.id = id
@@ -195,11 +195,11 @@ class LTM(Node):
         and sets the 'added' attribute to True.
 
         :param request: The service request containing the node's name, type, and data.
-        :type request: AddNodeToLTM_Request
+        :type request: core_interfaces.srv.AddNodeToLTM_Request
         :param response: The service response.
-        :type response: AddNodeToLTM_Response
+        :type response: core_interfaces.srv.AddNodeToLTM_Response
         :return: The response indicating whether the node was added successfully.
-        :rtype: AddNodeToLTM_Response
+        :rtype: core_interfaces.srv.AddNodeToLTM_Response
         """
         name = str(request.name)
         node_type = str(request.node_type)
@@ -228,12 +228,12 @@ class LTM(Node):
         attribute to True.
 
         :param request: The service request containing the original and new name of the node, its type, 
-                        and the new data for the node.
-        :type request: ReplaceNodeFromLTM_Request
+                and the new data for the node.
+        :type request: core_interfaces.srv.ReplaceNodeFromLTM_Request
         :param response: The service response.
-        :type response: ReplaceNodeFromLTM_Response
+        :type response: core_interfaces.srv.ReplaceNodeFromLTM_Response
         :return: The response indicating whether the node was replaced successfully.
-        :rtype: ReplaceNodeFromLTM_Response
+        :rtype: core_interfaces.srv.ReplaceNodeFromLTM_Response
         """
         name = str(request.name)
         new_name = str(request.new_name)
@@ -266,11 +266,11 @@ class LTM(Node):
         If the node is not found, the 'deleted' attribute is set to False.
 
         :param request: The service request containing the name of the node to be deleted.
-        :type request: DeleteNodeFromLTM_Request
+        :type request: core_interfaces.srv.DeleteNodeFromLTM_Request
         :param response: The service response.
-        :type response: DeleteNodeFromLTM_Response
+        :type response: core_interfaces.srv.DeleteNodeFromLTM_Response
         :return: The response indicating whether the node was deleted successfully.
-        :rtype: DeleteNodeFromLTM_Response
+        :rtype: core_interfaces.srv.DeleteNodeFromLTM_Response
         """
         name = str(request.name)
         for node_type in self.cognitive_nodes:
@@ -294,11 +294,11 @@ class LTM(Node):
         If the node is not found, an empty string is returned.
 
         :param request: The service request containing the name of the node to retrieve.
-        :type request: GetNodeFromLTM_Request
+        :type request: core_interfaces.srv.GetNodeFromLTM_Request
         :param response: The service response containing the node data if found.
-        :type response: GetNodeFromLTM_Response
+        :type response: core_interfaces.srv.GetNodeFromLTM_Response
         :return: The response with the node data in YAML format or an empty string.
-        :rtype: GetNodeFromLTM_Response
+        :rtype: core_interfaces.srv.GetNodeFromLTM_Response
         """        
         name = str(request.name)
 
@@ -327,15 +327,12 @@ class LTM(Node):
         Callback function for the 'set_changes_topic' service.
         Sets the topic for tracking changes in the LTM.
 
-        This method updates the 'changes_topic' attribute of the LTM with the provided topic name 
-        from the service request. The updated topic name is returned in the service response.
-
-        :param request: The service request containing the name of the changes topic to be set.
-        :type request: SetChangesTopic_Request
+        :param request: The service request containing the boolean value for the changes topic.
+        :type request: core_interfaces.srv.SetChangesTopic_Request
         :param response: The service response confirming the updated changes topic.
-        :type response: SetChangesTopic_Response
-        :return: The response with the updated changes topic name.
-        :rtype: SetChangesTopic_Response
+        :type response: core_interfaces.srv.SetChangesTopic_Response
+        :return: The response with the updated changes topic value.
+        :rtype: core_interfaces.srv.SetChangesTopic_Response
         """        
         changes_topic = request.changes_topic
         self.changes_topic = changes_topic
@@ -344,6 +341,17 @@ class LTM(Node):
         return response
     
     async def update_neighbor_callback(self, request, response):
+        """
+        Callback function for the 'update_neighbor' service.
+        Updates the neighbor relationship between two cognitive nodes.
+
+        :param request: The service request containing the node name, neighbor name, and operation type.
+        :type request: core_interfaces.srv.UpdateNeighbor_Request
+        :param response: The service response indicating the success of the operation.
+        :type response: core_interfaces.srv.UpdateNeighbor_Response
+        :return: The response indicating whether the neighbor update was successful.
+        :rtype: core_interfaces.srv.UpdateNeighbor_Response
+        """
         self.get_logger().info(f"Processing neighbor change")
         success=False
         node_name=request.node_name
@@ -482,6 +490,20 @@ class LTM(Node):
         return node_type in self.cognitive_nodes
     
     def get_node_dict(self, name, default=None):
+        """
+        Retrieve the dictionary of a cognitive node by its name.
+
+        This method searches for a cognitive node with the given name across all node types
+        in the LTM. If the node is found, its dictionary is returned. If the node is not found,
+        the provided default value is returned.
+
+        :param name: The name of the cognitive node to retrieve.
+        :type name: str
+        :param default: The default value to return if the node is not found, defaults to None.
+        :type default: any
+        :return: The dictionary of the cognitive node if found, otherwise the default value.
+        :rtype: dict or any
+        """
         data_dic=default
         for node_type in self.cognitive_nodes:
             if name in self.cognitive_nodes[node_type]:
@@ -489,6 +511,18 @@ class LTM(Node):
         return data_dic
     
     def get_node_type(self, name):
+        """
+        Retrieve the type of a cognitive node by its name.
+
+        This method searches for a cognitive node with the given name across all node types
+        in the LTM. If the node is found, its type is returned. If the node is not found,
+        None is returned.
+
+        :param name: The name of the cognitive node to retrieve the type for.
+        :type name: str
+        :return: The type of the cognitive node if found, otherwise None.
+        :rtype: str or None
+        """
         for node_type in self.cognitive_nodes:
             if name in self.cognitive_nodes[node_type]:
                 return node_type
@@ -497,6 +531,18 @@ class LTM(Node):
     # endregion CRUD operations
 
     async def add_neighbor(self, neighbor_name, neighbor_type, service_node_name):
+        """
+        Add a neighbor to a cognitive node by calling its 'add_neighbor' service.
+
+        :param neighbor_name: The name of the neighbor to be added.
+        :type neighbor_name: str
+        :param neighbor_type: The type of the neighbor to be added.
+        :type neighbor_type: str
+        :param service_node_name: The name of the cognitive node whose 'add_neighbor' service will be called.
+        :type service_node_name: str
+        :return: The result of the service call.
+        :rtype: cognitive_node_interfaces.srv.AddNeighbor_Response
+        """
         service_name = 'cognitive_node/' + service_node_name + '/add_neighbor'
         if service_name not in self.node_clients:
             self.node_clients[service_name]=ServiceClientAsync(self, AddNeighbor, service_name, callback_group=self.cbgroup_client)
@@ -504,6 +550,18 @@ class LTM(Node):
         return result
     
     async def delete_neighbor(self, neighbor_name, neighbor_type, service_node_name):
+        """
+        Remove a neighbor from a cognitive node by calling its 'delete_neighbor' service.
+
+        :param neighbor_name: The name of the neighbor to be removed.
+        :type neighbor_name: str
+        :param neighbor_type: The type of the neighbor to be removed.
+        :type neighbor_type: str
+        :param service_node_name: The name of the cognitive node whose 'delete_neighbor' service will be called.
+        :type service_node_name: str
+        :return: The result of the service call.
+        :rtype: cognitive_node_interfaces.srv.DeleteNeighbor_Response
+        """
         service_name = 'cognitive_node/' + service_node_name + '/delete_neighbor'
         if service_name not in self.node_clients:
             self.node_clients[service_name]=ServiceClientAsync(self, DeleteNeighbor, service_name, callback_group=self.cbgroup_client)

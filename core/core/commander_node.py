@@ -76,6 +76,8 @@ class CommanderNode(Node):
 
         :param request: Request for loading configuration file.
         :type request: core_interfaces.srv.LoadConfig_Request
+        :param response: Response with success result of the configuration.
+        :type response: core_interfaces.srv.LoadConfig_Response
         :return: Response with success result of the configuration.
         :rtype: core_interfaces.srv.LoadConfig_Response
         """
@@ -106,7 +108,6 @@ class CommanderNode(Node):
     def configure_services(self):
         """
         Generates additional services related to execution and cognitive nodes.
-
         """
         #Spawn services related to cognitive nodes
 
@@ -183,10 +184,12 @@ class CommanderNode(Node):
 
     def add_execution_node_callback(self, request, response):
         """
-        Callback for adding a new node to the system with a service call
+        Callback for adding a new node to the system with a service call.
 
         :param request: The request to add a new execution node.
         :type request: core_interfaces.srv.AddExecutionNode_Request
+        :param response: The response with the assigned ID for the new execution node.
+        :type response: core_interfaces.srv.AddExecutionNode_Response
         :return: The response with the assigned ID for the new execution node.
         :rtype: core_interfaces.srv.AddExecutionNode_Response
         """        
@@ -204,11 +207,11 @@ class CommanderNode(Node):
         and returns the assigned ID in the response. The execution nodes are created using the
         multiprocessing library. The process object is stored in the self.executors dictionary.
 
-        :param request: The request to add a new execution node.
-        :type request: core_interfaces.srv.AddExecutionNode_Request
-        :return: The response with the assigned ID for the new execution node.
-        :rtype: core_interfaces.srv.AddExecutionNode_Response
-        """        
+        :param threads: The number of threads for the new execution node.
+        :type threads: int
+        :return: The assigned ID for the new execution node.
+        :rtype: str
+        """
         self.last_id += 1
         new_id = str(self.last_id)
 
@@ -234,6 +237,8 @@ class CommanderNode(Node):
 
         :param request: The request to delete an execution node.
         :type request: core_interfaces.srv.DeleteExecutionNode_Request
+        :param response: The response indicating whether the deletion was successful.
+        :type response: core_interfaces.srv.DeleteExecutionNode_Response
         :return: The response indicating whether the deletion was successful.
         :rtype: core_interfaces.srv.DeleteExecutionNode_Response
         """        
@@ -301,6 +306,8 @@ class CommanderNode(Node):
 
         :param request: The request to move a cognitive node.
         :type request: core_interfaces.srv.MoveCognitiveNodeToExecutionNode_Request
+        :param response: The response indicating whether the movement was successful.
+        :type response: core_interfaces.srv.MoveCognitiveNodeToExecutionNode_Response
         :return: The response indicating whether the movement was successful.
         :rtype: core_interfaces.srv.MoveCognitiveNodeToExecutionNode_Response
         """        
@@ -772,6 +779,8 @@ class CommanderNode(Node):
         :type name: str
         :param class_name: The type of the node to create.
         :type class_name: str
+        :param parameters: The parameters for the node creation.
+        :type parameters: str
         :return: The response from the executor.
         :rtype: core_interfaces.srv.CreateNode_Response
         """
@@ -842,6 +851,8 @@ class CommanderNode(Node):
         :type executor_id: int
         :param name: The name of the node to load.
         :type name: str
+        :param file_path: The file path of the configuration to load.
+        :type file_path: str
         :return: The response from the executor.
         :rtype: core_interfaces.srv.LoadNode_Response
         """
@@ -854,8 +865,8 @@ class CommanderNode(Node):
     def send_read_all_nodes_request_to_executor(self, executor_id):
         """
         Send a request to read data from all cognitive nodes in a specific execution node.
-        :param executor_id: The identifier of the target execution node.
-        :type executor_id:  str
+        :param executor_id: The ID of the executor.
+        :type executor_id: int
         :return: The response containing data from all cognitive nodes.
         :rtype: core_interfaces.srv.ReadNode_Response
         """
@@ -869,8 +880,8 @@ class CommanderNode(Node):
         """
         Send a request to save the state of all cognitive nodes in a specific execution node.
 
-        :param executor_id: The identifier of the target execution node.
-        :type executor_id: str
+        :param executor_id: The ID of the executor.
+        :type executor_id: int
         :return: The response indicating the success of saving all cognitive nodes.
         :rtype: core_interfaces.srv.SaveNode_Response
         """        
@@ -884,8 +895,8 @@ class CommanderNode(Node):
         """
         Send a request to stop the execution of all cognitive nodes in a specific execution node.
 
-        :param executor_id: The identifier of the target execution node.
-        :type executor_id: str
+        :param executor_id: The ID of the executor.
+        :type executor_id: int
         :return: The response indicating the success of stopping the execution.
         :rtype: core_interfaces.srv.StopExecution_Response
         """        
@@ -896,12 +907,25 @@ class CommanderNode(Node):
         return executor_response
     
     def kill_commander(self, request, response):
+        """
+        Handle the termination of the commander node, shutting down the entire cognitive architecture.
+
+        :param request: The kill request.
+        :type request: core_interfaces.srv.StopExecution_Request
+        :param response: The response to the kill request.
+        :type response: core_interfaces.srv.StopExecution_Response
+        :return: The response indicating the success of the termination.
+        :rtype: core_interfaces.srv.StopExecution_Response
+        """
         self.process_shutdown()
         self.destroy_node()
 
         return response
     
     def process_shutdown(self):
+        """
+        Shutdown all execution nodes and terminate the commander node.
+        """
         for process in self.executors.values():
             process.terminate()
             process.join()

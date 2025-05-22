@@ -4,7 +4,14 @@ from cognitive_node_interfaces.msg import Perception, Actuation, ObjectParameter
 from enum import Enum
 
 def class_from_classname(class_name):
-    """Return a class object from a class name."""
+    """
+    Return a class object from a class name.
+
+    :param class_name: The name of the class.
+    :type class_name: str
+    :return: The class object.
+    :rtype: type
+    """
     module_string, _, class_string = class_name.rpartition(".")
     module = importlib.import_module(module_string)
     class_object = getattr(module, class_string)
@@ -12,11 +19,11 @@ def class_from_classname(class_name):
 
 def perception_dict_to_msg(perception_dict):
     """
-    Transform a perception dictionary into a ROS message
+    Transform a perception dictionary into a ROS message.
 
-    :param perception_dict: Dictionary that contais the perceptions
+    :param perception_dict: Dictionary that contais the perceptions.
     :type perception_dict: dict
-    :return: The ROS message with the perception
+    :return: The ROS message with the perception.
     :rtype: cognitve_node_interfaces.msg.Perception
     """
     msg = Perception()
@@ -28,11 +35,11 @@ def perception_dict_to_msg(perception_dict):
 
 def actuation_dict_to_msg(actuation_dict):
     """
-    Transform an actuation dictionary into a ROS message
+    Transform an actuation dictionary into a ROS message.
 
-    :param actuation_dict: Dictionary that contais the actuation signal
+    :param actuation_dict: Dictionary that contais the actuation signal.
     :type actuation_dict: dict
-    :return: The ROS message with the actuation
+    :return: The ROS message with the actuation.
     :rtype: cognitve_node_interfaces.msg.Actuation
     """
     msg = Actuation()
@@ -44,13 +51,13 @@ def actuation_dict_to_msg(actuation_dict):
 
 def dict_to_msg(msg, object_dict):
     """
-    Transform an object dictionary into a ROS message
+    Transform an object dictionary into a ROS message.
 
     :param msg: Message to transform
     :type msg: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
-    :param object_dict: Dictionary that contais the data
+    :param object_dict: Dictionary that contais the data.
     :type object_dict: dict
-    :return: The ROS message with the perception
+    :return: The ROS message with the perception.
     :rtype: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
     """
 
@@ -80,11 +87,11 @@ def dict_to_msg(msg, object_dict):
 
 def perception_msg_to_dict(msg):
     """
-    Transform a ROS message that contains a perception into a dictionary 
+    Transform a ROS message that contains a perception into a dictionary.
 
-    :param msg: The ROS message with the perception
+    :param msg: The ROS message with the perception.
     :type msg: cognitve_node_interfaces.msg.Perception
-    :return: The dictionary with the perceptions
+    :return: The dictionary with the perceptions.
     :rtype: dict
     """
     perception_dict = msg_to_dict(msg)
@@ -93,11 +100,11 @@ def perception_msg_to_dict(msg):
 
 def actuation_msg_to_dict(msg):
     """
-    Transform a ROS message that contains an actuation into a dictionary 
+    Transform a ROS message that contains an actuation into a dictionary.
 
-    :param msg: The ROS message with the perception
+    :param msg: The ROS message with the perception.
     :type msg: cognitve_node_interfaces.msg.Actuation
-    :return: The dictionary with the actuation
+    :return: The dictionary with the actuation.
     :rtype: dict
     """
     actuation_dict= msg_to_dict(msg)
@@ -106,8 +113,12 @@ def actuation_msg_to_dict(msg):
 
 def msg_to_dict(msg):
     """
-    Transform a ROS message that contains an object list into a dictionary
+    Transform a ROS message that contains an object list into a dictionary.
 
+    :param msg: The ROS message containing the object list.
+    :type msg: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :return: A dictionary representation of the object list.
+    :rtype: dict
     """
     dict = {}
     first_value = 0 
@@ -134,11 +145,11 @@ def msg_to_dict(msg):
 
 def separate_perceptions(perception):
     """
-    Separate a dicionary with several percepcions in several ones with one perception
+    Separate a dicionary with several perceptions in several ones with one perception.
 
-    :param perception: The dictionary with all perceptions
+    :param perception: The dictionary with all perceptions.
     :type perception: dict
-    :return: A list with the several dictionaries
+    :return: A list with the dictionaries.
     :rtype: list
     """
     perceptions = []
@@ -176,10 +187,20 @@ def compare_perceptions(input_1, input_2, thresh=0.01):
     return True
 
 class EncodableDecodableEnum(Enum):
+    """Enum class that can be encoded and decoded to/from a normalized value."""
+
     @classmethod
     def encode(cls, value: str, normalized=True) -> float:
         """
         Encodes a string to a normalized class value.
+
+        :param value: The string representation of the enum member.
+        :type value: str
+        :param normalized: Whether to normalize the encoded value, defaults to True.
+        :type normalized: bool
+        :raises ValueError: If the provided value is not a valid enum member.
+        :return: The encoded value as a float
+        :rtype: float
         """
         value = value.upper().replace(" ", "_")
         if value not in cls.__members__:
@@ -192,6 +213,14 @@ class EncodableDecodableEnum(Enum):
     def decode(cls, value, normalized=True) -> str:
         """
         Decodes a normalized class value back to the corresponding string.
+
+        :param value: The encoded value to decode.
+        :type value: float
+        :param normalized: Whether the value is normalized, defaults to True.
+        :type normalized: bool
+        :raises ValueError: If no matching class is found for the value.
+        :return: The string representation of the enum member.
+        :rtype: str
         """
         if normalized:
             index = round(value * (len(cls) - 1))

@@ -232,7 +232,7 @@ class CognitiveNode(Node):
         """
         Publish the activation of this node.
         :param activation: The activation to be published.
-        :type activation: float
+        :type activation: cognitive_node_interfaces.msg.Activation
         """
         self.publish_activation_topic.publish(activation)
         self.get_logger().debug("Activation for " + str(activation.node_type) + str(activation.node_name) +
@@ -240,13 +240,13 @@ class CognitiveNode(Node):
     
     def add_neighbor_callback(self, request, response):
         """
-        Add a neighbor to the nodes neighbors collection
+        Add a neighbor to the nodes neighbors collection.
 
-        :param request: The request that contains the neighbor info
+        :param request: The request that contains the neighbor info.
         :type request: cognitive_node_interfaces.srv.AddNeighbor_Request
-        :param response: The response that indicates if the neighbor was added
+        :param response: The response that indicates if the neighbor was added.
         :type response: cognitive_node_interfaces.srv.AddNeighbor_Response
-        :return: The response that indicates if the neighbor was added
+        :return: The response that indicates if the neighbor was added.
         :rtype: cognitive_node_interfaces.srv.AddNeighbor_Response
         """
         
@@ -261,13 +261,13 @@ class CognitiveNode(Node):
     
     def delete_neighbor_callback(self, request, response):
         """
-        Delete a neighbor to the nodes neighbors collection
+        Delete a neighbor to the nodes neighbors collection.
 
-        :param request: The request that contains the neighbor info
+        :param request: The request that contains the neighbor info.
         :type request: cognitive_node_interfaces.srv.DeleteNeighbor_Request
-        :param response: The response that indicates if the neighbor was deleted
+        :param response: The response that indicates if the neighbor was deleted.
         :type response: cognitive_node_interfaces.srv.DeleteNeighbor_Response
-        :return: The response that indicates if the neighbor was deleted
+        :return: The response that indicates if the neighbor was deleted.
         :rtype: cognitive_node_interfaces.srv.DeleteNeighbor_Response
         """
         node_name = request.neighbor_name
@@ -291,6 +291,10 @@ class CognitiveNode(Node):
         Callback method to calculate and return the node's activations.
         This method calculates the activation of the node based on its perception.
 
+        :param request: The request containing the perception data.
+        :type request: cognitive_node_interfaces.srv.GetActivation_Request
+        :param response: The response that will contain the calculated activation.
+        :type response: cognitive_node_interfaces.srv.GetActivation_Response
         :return: The response with the calculated activation.
         :rtype: cognitive_node_interfaces.srv.GetActivation_Response
         """
@@ -310,6 +314,10 @@ class CognitiveNode(Node):
         This method retrieves information about the node, such as its current activation.
         The activation value is included in the response for external queries.
 
+        :param request: The request for node information.
+        :type request: cognitive_node_interfaces.srv.GetInformation_Request
+        :param response: The response that will contain the node's information.
+        :type response: cognitive_node_interfaces.srv.GetInformation_Response
         :return: The response with the node's information.
         :rtype: cognitive_node_interfaces.srv.GetInformation_Response
         """
@@ -333,6 +341,8 @@ class CognitiveNode(Node):
 
         :param request: True to publish the activation; False otherwise.
         :type request: cognitive_node_interfaces.srv.SetActivationTopic_Request
+        :param response: True if the node will publish the activation; False otherwise.
+        :type response: cognitive_node_interfaces.srv.SetActivationTopic_Response
         :return: True if the node will publish the activation; False otherwise.
         :rtype: cognitive_node_interfaces.srv.SetActivationTopic_Response
         """
@@ -366,7 +376,7 @@ class CognitiveNode(Node):
         """
         Adds a node to the activation inputs list.
 
-        :param node: Dictionary with the information of the node {'name': <name>, 'node_type': <node_type>}
+        :param node: Dictionary with the information of the node {'name': <name>, 'node_type': <node_type>}.
         :type node: dict
         """        
         name=node['name']
@@ -386,7 +396,7 @@ class CognitiveNode(Node):
         """
         Deletes a node from the activation inputs list.
 
-        :param node: Dictionary with the information of the node {'name': <name>, 'node_type': <node_type>}
+        :param node: Dictionary with the information of the node {'name': <name>, 'node_type': <node_type>}.
         :type node: dict
         """ 
         name=node['name']
@@ -398,7 +408,7 @@ class CognitiveNode(Node):
         """
         Populates the activation list from a list of neighbors.
 
-        :param neighbor_list: Dictionary with the information of the node [{'name': <name>, 'node_type': <node_type>}, .... ]
+        :param neighbor_list: Dictionary with the information of the node [{'name': <name>, 'node_type': <node_type>}, .... ].
         :type neighbor_list: dict
         """ 
         for neighbor in neighbor_list:
@@ -408,9 +418,9 @@ class CognitiveNode(Node):
         """
         Callback to read the activation of a neighbor node.
 
-        :param msg: _description_
-        :type msg: cognitive_nodes_interfaces.msg.Activation
-        """        
+        :param msg: Activation message from a neighbor node.
+        :type msg: cognitive_node_interfaces.msg.Activation
+        """
         node_name=msg.node_name
         if node_name in self.activation_inputs:
             if Time.from_msg(msg.timestamp).nanoseconds>Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds:
@@ -425,7 +435,7 @@ class CognitiveNode(Node):
 
         :param node_name: Node to which the neighbor will be added.
         :type node_name: str
-        :param neighbor_name: Node that will be added as neighbor
+        :param neighbor_name: Node that will be added as neighbor.
         :type neighbor_name: str
         :return: Future with service's response
         :rtype: Future
@@ -439,9 +449,9 @@ class CognitiveNode(Node):
 
         :param node_name: Node to which the neighbor will be deleted.
         :type node_name: str
-        :param neighbor_name: Node that will be deleted as neighbor
+        :param neighbor_name: Node that will be deleted as neighbor.
         :type neighbor_name: str
-        :return: Future with service's response
+        :return: Future with service's response.
         :rtype: Future
         """    
         response=self.update_neighbor_client(node_name, neighbor_name, False)
@@ -457,7 +467,7 @@ class CognitiveNode(Node):
         :type neighbor_name: str
         :param operation: Selects between adding (True) or deleting (False) neighbor.
         :type operation: bool
-        :return: Future with service's response
+        :return: Future with service's response.
         :rtype: Future
         """        
         if getattr(self, "LTM_id", None):
@@ -475,9 +485,9 @@ class CognitiveNode(Node):
         :type name: str
         :param class_name: Name of the class to be used for the creation of the node.
         :type class_name: str
-        :param parameters: Optional parameters that can be passed to the node, defaults to {}
-        :type parameters: dict, optional
-        :return: Success status received from the commander
+        :param parameters: Optional parameters that can be passed to the node, defaults to {}.
+        :type parameters: dict
+        :return: Success status received from the commander.
         :rtype: bool
         """
 

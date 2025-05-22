@@ -34,7 +34,9 @@ class ExecutionNode(Node):
         Constructor for the ExecutionNode class.
 
         :param executor: The ROS2 executor for the node.
-        :type executor: rclpy.executors.SingleThreadedExecutor
+        :type executor: rclpy.executors.Executor
+        :param id: The identifier for this execution node.
+        :type id: int
         """
 
         # service_name = 'commander/add_executor'
@@ -128,7 +130,9 @@ class ExecutionNode(Node):
         In other case, the existent data is loaded.
 
         :param request: The request to create a new node.
-        :type name: core_interfaces.srv.CreateNode_Request
+        :type request: core_interfaces.srv.CreateNode_Request
+        :param response: The response indicating the success of the creation.
+        :type response: core_interfaces.srv.CreateNode_Response
         :return: The response indicating the success of the creation.
         :rtype: core_interfaces.srv.CreateNode_Response
         """
@@ -163,6 +167,8 @@ class ExecutionNode(Node):
 
         :param request: The request containing the name of the node to read.
         :type request: core_interfaces.srv.ReadNode_Request
+        :param response: The response with the requested node data.
+        :type response: core_interfaces.srv.ReadNode_Response
         :return: The response with the requested node data.
         :rtype: core_interfaces.srv.ReadNode_Response
         """
@@ -186,6 +192,8 @@ class ExecutionNode(Node):
 
         :param request: The request containing the name of the node to delete.
         :type request: core_interfaces.srv.DeleteNode_Request
+        :param response: The response indicating the success of the deletion.
+        :type response: core_interfaces.srv.DeleteNode_Response
         :return: The response indicating the success of the deletion.
         :rtype: core_interfaces.srv.DeleteNode_Response
         """
@@ -211,7 +219,8 @@ class ExecutionNode(Node):
 
         :param request: The request containing the name of the node to save.
         :type request: core_interfaces.srv.SaveNode_Request
-
+        :param response: The response indicating the success of the saving.
+        :type response: core_interfaces.srv.SaveNode_Response
         :return: The response indicating the success of the saving.
         :rtype: core_interfaces.srv.SaveNode_Response
         """
@@ -236,10 +245,12 @@ class ExecutionNode(Node):
 
     def load_node(self, request, response):
         """
-        Load a cognitive node from a  file.
+        Load a cognitive node from a file.
 
         :param request: The request containing the name and file path of the node to load.
         :type request: core_interfaces.srv.LoadNode_Request
+        :param response: The request containing the name and file path of the node to load.
+        :type response: core_interfaces.srv.LoadNode_Request
         :return: The response indicating the success of the loading.
         :rtype: core_interfaces.srv.LoadNode_Response
         """  
@@ -279,6 +290,9 @@ class ExecutionNode(Node):
     def read_all_nodes(self, _, response):
         """
         Read the data from all cognitive nodes in this execution node.
+
+        :param response: The response containing data from all nodes.
+        :type response: core_interfaces.srv.ReadNode_Response
         :return: The response containing data from all nodes.
         :rtype: core_interfaces.srv.ReadNode_Response
         """
@@ -299,6 +313,9 @@ class ExecutionNode(Node):
     def save_all_nodes(self, _, response):
         """
         Save data from all cognitive nodes in this execution node.
+
+        :param response: The response indicating the success of the operation.
+        :type response: core_interfaces.srv.SaveNode_Response
         :return: The response indicating the success of the operation.
         :rtype: core_interfaces.srv.SaveNode_Response
         """
@@ -335,6 +352,11 @@ class ExecutionNode(Node):
     def stop_execution(self, request, response):
         """
         Stop the execution of all cognitive nodes in this execution node.
+
+        :param request: The request to stop execution.
+        :type request: core_interfaces.srv.StopExecution_Request
+        :param response: The response indicating the success of stopping execution.
+        :type response: core_interfaces.srv.StopExecution_Response
         :return: The response indicating the success of stopping execution.
         :rtype: core_interfaces.srv.StopExecution_Response
         """
@@ -362,6 +384,16 @@ class ExecutionNode(Node):
             rclpy.shutdown()
             
 def create_execution_node(id: int, threads: int, args=None):
+    """
+    Create and run an execution node.
+
+    :param id: The identifier for the execution node.
+    :type id: int
+    :param threads: The number of threads for the executor.
+    :type threads: int
+    :param args: Additional arguments for rclpy initialization, defaults to None.
+    :type args: list
+    """
     rclpy.init(args=args)
     if threads>1:
         executor=MultiThreadedExecutor(num_threads=threads)
