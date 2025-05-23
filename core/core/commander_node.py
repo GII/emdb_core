@@ -75,11 +75,11 @@ class CommanderNode(Node):
         Loads a yaml file with the configuration of the execution nodes.
 
         :param request: Request for loading configuration file.
-        :type request: core_interfaces.srv.LoadConfig_Request
+        :type request: core_interfaces.srv.LoadConfig.Request
         :param response: Response with success result of the configuration.
-        :type response: core_interfaces.srv.LoadConfig_Response
+        :type response: core_interfaces.srv.LoadConfig.Response
         :return: Response with success result of the configuration.
-        :rtype: core_interfaces.srv.LoadConfig_Response
+        :rtype: core_interfaces.srv.LoadConfig.Response
         """
 
         config_file= str(request.file)
@@ -187,11 +187,11 @@ class CommanderNode(Node):
         Callback for adding a new node to the system with a service call.
 
         :param request: The request to add a new execution node.
-        :type request: core_interfaces.srv.AddExecutionNode_Request
+        :type request: core_interfaces.srv.AddExecutionNode.Request
         :param response: The response with the assigned ID for the new execution node.
-        :type response: core_interfaces.srv.AddExecutionNode_Response
+        :type response: core_interfaces.srv.AddExecutionNode.Response
         :return: The response with the assigned ID for the new execution node.
-        :rtype: core_interfaces.srv.AddExecutionNode_Response
+        :rtype: core_interfaces.srv.AddExecutionNode.Response
         """        
 
         new_id=self.add_execution_node(request.threads)
@@ -236,11 +236,11 @@ class CommanderNode(Node):
         3. Loads the saved cognitive nodes into other executors.
 
         :param request: The request to delete an execution node.
-        :type request: core_interfaces.srv.DeleteExecutionNode_Request
+        :type request: core_interfaces.srv.DeleteExecutionNode.Request
         :param response: The response indicating whether the deletion was successful.
-        :type response: core_interfaces.srv.DeleteExecutionNode_Response
+        :type response: core_interfaces.srv.DeleteExecutionNode.Response
         :return: The response indicating whether the deletion was successful.
-        :rtype: core_interfaces.srv.DeleteExecutionNode_Response
+        :rtype: core_interfaces.srv.DeleteExecutionNode.Response
         """        
         raise NotImplementedError
 
@@ -305,11 +305,11 @@ class CommanderNode(Node):
         4. Loads the node into the specified executor.
 
         :param request: The request to move a cognitive node.
-        :type request: core_interfaces.srv.MoveCognitiveNodeToExecutionNode_Request
+        :type request: core_interfaces.srv.MoveCognitiveNodeToExecutionNode.Request
         :param response: The response indicating whether the movement was successful.
-        :type response: core_interfaces.srv.MoveCognitiveNodeToExecutionNode_Response
+        :type response: core_interfaces.srv.MoveCognitiveNodeToExecutionNode.Response
         :return: The response indicating whether the movement was successful.
-        :rtype: core_interfaces.srv.MoveCognitiveNodeToExecutionNode_Response
+        :rtype: core_interfaces.srv.MoveCognitiveNodeToExecutionNode.Response
         """        
         ex_id = request.ex_id
         node_name = request.name
@@ -355,11 +355,11 @@ class CommanderNode(Node):
         5. Registers the created node in the system.
 
         :param request: The creation request.
-        :type request: core_interfaces.srv.CreateNode_Request
+        :type request: core_interfaces.srv.CreateNode.Request
         :param response: The response to the creation request.
-        :type response: core_interfaces.srv.CreateNode_Response
+        :type response: core_interfaces.srv.CreateNode.Response
         :return: The response to the creation request.
-        :rtype: core_interfaces.srv.CreateNode_Response
+        :rtype: core_interfaces.srv.CreateNode.Response
         """
         name = str(request.name)
         class_name = str(request.class_name)
@@ -397,11 +397,11 @@ class CommanderNode(Node):
         6. Sets the response data with the information obtained from the cognitive node.
 
         :param request: The read request.
-        :type request: core_interfaces.srv.ReadNode_Request
+        :type request: core_interfaces.srv.ReadNode.Request
         :param response: The response to the read request.
-        :type response: core_interfaces.srv.ReadNode_Response
+        :type response: core_interfaces.srv.ReadNode.Response
         :return: The response to the read request.
-        :rtype: core_interfaces.srv.ReadNode_Response
+        :rtype: core_interfaces.srv.ReadNode.Response
         """        
         name = str(request.name)
         
@@ -435,11 +435,11 @@ class CommanderNode(Node):
         5. Removes the node from the local data structures.
         
         :param request: The delete request.
-        :type request: core_interfaces.srv.DeleteNode_Request
+        :type request: core_interfaces.srv.DeleteNode.Request
         :param response: The response to the delete request.
-        :type response: core_interfaces.srv.DeleteNode_Response
+        :type response: core_interfaces.srv.DeleteNode.Response
         :return: The response to the delete request.
-        :rtype: core_interfaces.srv.DeleteNode_Response
+        :rtype: core_interfaces.srv.DeleteNode.Response
         """        
         name = str(request.name)
         self.get_logger().info(f"Deleting node {name}...")
@@ -470,11 +470,11 @@ class CommanderNode(Node):
         3. Sends a save request to the executor to save the state of the node.
 
         :param request: The save request.
-        :type request: core_interfaces.srv.SaveNode_Request
+        :type request: core_interfaces.srv.SaveNode.Request
         :param response: The response to the save request.
-        :type response: core_interfaces.srv.SaveNode_Response
+        :type response: core_interfaces.srv.SaveNode.Response
         :return: The response to the save request.
-        :rtype: core_interfaces.srv.SaveNode_Response
+        :rtype: core_interfaces.srv.SaveNode.Response
         """        
         name = str(request.name)
                 
@@ -505,11 +505,11 @@ class CommanderNode(Node):
         5. Registers the loaded node in the local data structures.
 
         :param request: The load request.
-        :type request: core_interfaces.srv.LoadNode_Request
+        :type request: core_interfaces.srv.LoadNode.Request
         :param response: The response to the load request.
-        :type response: core_interfaces.srv.LoadNode_Response
+        :type response: core_interfaces.srv.LoadNode.Response
         :return: The response to the load request.
-        :rtype: core_interfaces.srv.LoadNode_Response
+        :rtype: core_interfaces.srv.LoadNode.Response
         """
         name = str(request.name)
         file_path = str(request.file)
@@ -545,11 +545,11 @@ class CommanderNode(Node):
         5. Iterates over the cognitive nodes, creating and registering them in the system.
 
         :param request: The load experiment request.
-        :type request: core_interfaces.srv.LoadConfig_Request
+        :type request: core_interfaces.srv.LoadConfig.Request
         :param response: The response to the load experiment request.
-        :type response: core_interfaces.srv.LoadConfig_Response
+        :type response: core_interfaces.srv.LoadConfig.Response
         :return: The response to the load experiment request.
-        :rtype: core_interfaces.srv.LoadConfig_Response
+        :rtype: core_interfaces.srv.LoadConfig.Response
         """    
         experiment_file = str(request.file)
 
@@ -639,11 +639,11 @@ class CommanderNode(Node):
         5. Writes the final data structure to a YAML file.
 
         :param request: The save config request.
-        :type request: core_interfaces.srv.SaveConfig_Request
+        :type request: core_interfaces.srv.SaveConfig.Request
         :param response: The response to the save config request.
-        :type response: core_interfaces.srv.SaveConfig_Response
+        :type response: core_interfaces.srv.SaveConfig.Response
         :return: The response to the save config request.
-        :rtype: core_interfaces.srv.SaveConfig_Response
+        :rtype: core_interfaces.srv.SaveConfig.Response
         """        
         response.saved = True
         
@@ -685,11 +685,11 @@ class CommanderNode(Node):
         3. Publishes a stop message for each execution node.
 
         :param request: The stop execution request.
-        :type request: core_interfaces.srv.StopExecution_Request
+        :type request: core_interfaces.srv.StopExecution.Request
         :param response: The response to the stop execution request.
-        :type response: core_interfaces.srv.StopExecution_Response
+        :type response: core_interfaces.srv.StopExecution.Response
         :return: The response to the stop execution request.
-        :rtype: core_interfaces.srv.StopExecution_Response
+        :rtype: core_interfaces.srv.StopExecution.Response
         """
         self.get_logger().info(f'Stopping execution...')
 
@@ -782,7 +782,7 @@ class CommanderNode(Node):
         :param parameters: The parameters for the node creation.
         :type parameters: str
         :return: The response from the executor.
-        :rtype: core_interfaces.srv.CreateNode_Response
+        :rtype: core_interfaces.srv.CreateNode.Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/create'
         if service_name not in self.node_clients:
@@ -799,7 +799,7 @@ class CommanderNode(Node):
         :param name: The name of the node to read.
         :type name: str
         :return: The response from the executor.
-        :rtype: core_interfaces.srv.ReadNode_Response
+        :rtype: core_interfaces.srv.ReadNode.Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/read'
         if service_name not in self.node_clients:
@@ -818,7 +818,7 @@ class CommanderNode(Node):
         :param class_name: The type of the node to delete.
         :type class_name: str
         :return: The response from the executor.
-        :rtype: core_interfaces.srv.DeleteNode_Response
+        :rtype: core_interfaces.srv.DeleteNode.Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/delete'
         if service_name not in self.node_clients:
@@ -835,7 +835,7 @@ class CommanderNode(Node):
         :param name: The name of the node to save.
         :type name: str
         :return: The response from the executor.
-        :rtype: core_interfaces.srv.SaveNode_Response
+        :rtype: core_interfaces.srv.SaveNode.Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/save'
         if service_name not in self.node_clients:
@@ -854,7 +854,7 @@ class CommanderNode(Node):
         :param file_path: The file path of the configuration to load.
         :type file_path: str
         :return: The response from the executor.
-        :rtype: core_interfaces.srv.LoadNode_Response
+        :rtype: core_interfaces.srv.LoadNode.Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/load'
         if service_name not in self.node_clients:
@@ -868,7 +868,7 @@ class CommanderNode(Node):
         :param executor_id: The ID of the executor.
         :type executor_id: int
         :return: The response containing data from all cognitive nodes.
-        :rtype: core_interfaces.srv.ReadNode_Response
+        :rtype: core_interfaces.srv.ReadNode.Response
         """
         service_name = 'execution_node_' + str(executor_id) + '/read_all_nodes'
         if service_name not in self.node_clients:
@@ -883,7 +883,7 @@ class CommanderNode(Node):
         :param executor_id: The ID of the executor.
         :type executor_id: int
         :return: The response indicating the success of saving all cognitive nodes.
-        :rtype: core_interfaces.srv.SaveNode_Response
+        :rtype: core_interfaces.srv.SaveNode.Response
         """        
         service_name = 'execution_node_' + str(executor_id) + '/save_all_nodes'
         if service_name not in self.node_clients:
@@ -898,7 +898,7 @@ class CommanderNode(Node):
         :param executor_id: The ID of the executor.
         :type executor_id: int
         :return: The response indicating the success of stopping the execution.
-        :rtype: core_interfaces.srv.StopExecution_Response
+        :rtype: core_interfaces.srv.StopExecution.Response
         """        
         service_name = 'execution_node_' + str(executor_id) + '/stop_execution'
         if service_name not in self.node_clients:
@@ -911,11 +911,11 @@ class CommanderNode(Node):
         Handle the termination of the commander node, shutting down the entire cognitive architecture.
 
         :param request: The kill request.
-        :type request: core_interfaces.srv.StopExecution_Request
+        :type request: core_interfaces.srv.StopExecution.Request
         :param response: The response to the kill request.
-        :type response: core_interfaces.srv.StopExecution_Response
+        :type response: core_interfaces.srv.StopExecution.Response
         :return: The response indicating the success of the termination.
-        :rtype: core_interfaces.srv.StopExecution_Response
+        :rtype: core_interfaces.srv.StopExecution.Response
         """
         self.process_shutdown()
         self.destroy_node()

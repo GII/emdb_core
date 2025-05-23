@@ -159,7 +159,7 @@ class CognitiveNode(Node):
         """
         Removes the node from the LTM. 
         :return: True if the operation was succesful, False otherwise.
-        :rtype: core_interfaces.srv.DeleteNodeFromLTM_Response
+        :rtype: core_interfaces.srv.DeleteNodeFromLTM.Response
         """
         ltm_response = self.delete_node_client.send_request_async(name=self.name)
         return ltm_response.deleted
@@ -243,11 +243,11 @@ class CognitiveNode(Node):
         Add a neighbor to the nodes neighbors collection.
 
         :param request: The request that contains the neighbor info.
-        :type request: cognitive_node_interfaces.srv.AddNeighbor_Request
+        :type request: cognitive_node_interfaces.srv.AddNeighbor.Request
         :param response: The response that indicates if the neighbor was added.
-        :type response: cognitive_node_interfaces.srv.AddNeighbor_Response
+        :type response: cognitive_node_interfaces.srv.AddNeighbor.Response
         :return: The response that indicates if the neighbor was added.
-        :rtype: cognitive_node_interfaces.srv.AddNeighbor_Response
+        :rtype: cognitive_node_interfaces.srv.AddNeighbor.Response
         """
         
         node_name = request.neighbor_name
@@ -264,11 +264,11 @@ class CognitiveNode(Node):
         Delete a neighbor to the nodes neighbors collection.
 
         :param request: The request that contains the neighbor info.
-        :type request: cognitive_node_interfaces.srv.DeleteNeighbor_Request
+        :type request: cognitive_node_interfaces.srv.DeleteNeighbor.Request
         :param response: The response that indicates if the neighbor was deleted.
-        :type response: cognitive_node_interfaces.srv.DeleteNeighbor_Response
+        :type response: cognitive_node_interfaces.srv.DeleteNeighbor.Response
         :return: The response that indicates if the neighbor was deleted.
-        :rtype: cognitive_node_interfaces.srv.DeleteNeighbor_Response
+        :rtype: cognitive_node_interfaces.srv.DeleteNeighbor.Response
         """
         node_name = request.neighbor_name
         node_type = request.neighbor_type
@@ -292,11 +292,11 @@ class CognitiveNode(Node):
         This method calculates the activation of the node based on its perception.
 
         :param request: The request containing the perception data.
-        :type request: cognitive_node_interfaces.srv.GetActivation_Request
+        :type request: cognitive_node_interfaces.srv.GetActivation.Request
         :param response: The response that will contain the calculated activation.
-        :type response: cognitive_node_interfaces.srv.GetActivation_Response
+        :type response: cognitive_node_interfaces.srv.GetActivation.Response
         :return: The response with the calculated activation.
-        :rtype: cognitive_node_interfaces.srv.GetActivation_Response
+        :rtype: cognitive_node_interfaces.srv.GetActivation.Response
         """
         self.get_logger().debug('Getting node activation...')
         perception = perception_msg_to_dict(request.perception)
@@ -315,11 +315,11 @@ class CognitiveNode(Node):
         The activation value is included in the response for external queries.
 
         :param request: The request for node information.
-        :type request: cognitive_node_interfaces.srv.GetInformation_Request
+        :type request: cognitive_node_interfaces.srv.GetInformation.Request
         :param response: The response that will contain the node's information.
-        :type response: cognitive_node_interfaces.srv.GetInformation_Response
+        :type response: cognitive_node_interfaces.srv.GetInformation.Response
         :return: The response with the node's information.
-        :rtype: cognitive_node_interfaces.srv.GetInformation_Response
+        :rtype: cognitive_node_interfaces.srv.GetInformation.Response
         """
         self.get_logger().debug('Getting node information...')
         response.node_name = self.name
@@ -340,11 +340,11 @@ class CognitiveNode(Node):
         This method toggles the activation topic publishing for the node based on the provided request.
 
         :param request: True to publish the activation; False otherwise.
-        :type request: cognitive_node_interfaces.srv.SetActivationTopic_Request
+        :type request: cognitive_node_interfaces.srv.SetActivationTopic.Request
         :param response: True if the node will publish the activation; False otherwise.
-        :type response: cognitive_node_interfaces.srv.SetActivationTopic_Response
+        :type response: cognitive_node_interfaces.srv.SetActivationTopic.Response
         :return: True if the node will publish the activation; False otherwise.
-        :rtype: cognitive_node_interfaces.srv.SetActivationTopic_Response
+        :rtype: cognitive_node_interfaces.srv.SetActivationTopic.Response
         """
         activation_topic = request.activation_topic
         self.get_logger().info('Setting activation topic to ' + str(activation_topic) + '...')

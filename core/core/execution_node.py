@@ -130,11 +130,11 @@ class ExecutionNode(Node):
         In other case, the existent data is loaded.
 
         :param request: The request to create a new node.
-        :type request: core_interfaces.srv.CreateNode_Request
+        :type request: core_interfaces.srv.CreateNode.Request
         :param response: The response indicating the success of the creation.
-        :type response: core_interfaces.srv.CreateNode_Response
+        :type response: core_interfaces.srv.CreateNode.Response
         :return: The response indicating the success of the creation.
-        :rtype: core_interfaces.srv.CreateNode_Response
+        :rtype: core_interfaces.srv.CreateNode.Response
         """
 
         class_name = str(request.class_name)
@@ -166,11 +166,11 @@ class ExecutionNode(Node):
         Retrieve information about a node by its name.
 
         :param request: The request containing the name of the node to read.
-        :type request: core_interfaces.srv.ReadNode_Request
+        :type request: core_interfaces.srv.ReadNode.Request
         :param response: The response with the requested node data.
-        :type response: core_interfaces.srv.ReadNode_Response
+        :type response: core_interfaces.srv.ReadNode.Response
         :return: The response with the requested node data.
-        :rtype: core_interfaces.srv.ReadNode_Response
+        :rtype: core_interfaces.srv.ReadNode.Response
         """
         name = str(request.name)
         
@@ -191,11 +191,11 @@ class ExecutionNode(Node):
         Delete a cognitive node by its name.
 
         :param request: The request containing the name of the node to delete.
-        :type request: core_interfaces.srv.DeleteNode_Request
+        :type request: core_interfaces.srv.DeleteNode.Request
         :param response: The response indicating the success of the deletion.
-        :type response: core_interfaces.srv.DeleteNode_Response
+        :type response: core_interfaces.srv.DeleteNode.Response
         :return: The response indicating the success of the deletion.
-        :rtype: core_interfaces.srv.DeleteNode_Response
+        :rtype: core_interfaces.srv.DeleteNode.Response
         """
         name = str(request.name)
 
@@ -218,11 +218,11 @@ class ExecutionNode(Node):
         Save the state of a cognitive node.
 
         :param request: The request containing the name of the node to save.
-        :type request: core_interfaces.srv.SaveNode_Request
+        :type request: core_interfaces.srv.SaveNode.Request
         :param response: The response indicating the success of the saving.
-        :type response: core_interfaces.srv.SaveNode_Response
+        :type response: core_interfaces.srv.SaveNode.Response
         :return: The response indicating the success of the saving.
-        :rtype: core_interfaces.srv.SaveNode_Response
+        :rtype: core_interfaces.srv.SaveNode.Response
         """
 
         name = str(request.name)
@@ -248,11 +248,11 @@ class ExecutionNode(Node):
         Load a cognitive node from a file.
 
         :param request: The request containing the name and file path of the node to load.
-        :type request: core_interfaces.srv.LoadNode_Request
+        :type request: core_interfaces.srv.LoadNode.Request
         :param response: The request containing the name and file path of the node to load.
-        :type response: core_interfaces.srv.LoadNode_Request
+        :type response: core_interfaces.srv.LoadNode.Request
         :return: The response indicating the success of the loading.
-        :rtype: core_interfaces.srv.LoadNode_Response
+        :rtype: core_interfaces.srv.LoadNode.Response
         """  
         
         name = str(request.name)
@@ -292,9 +292,9 @@ class ExecutionNode(Node):
         Read the data from all cognitive nodes in this execution node.
 
         :param response: The response containing data from all nodes.
-        :type response: core_interfaces.srv.ReadNode_Response
+        :type response: core_interfaces.srv.ReadNode.Response
         :return: The response containing data from all nodes.
-        :rtype: core_interfaces.srv.ReadNode_Response
+        :rtype: core_interfaces.srv.ReadNode.Response
         """
 
         self.get_logger().info(f'Reading all the nodes from execution node {self.id}')
@@ -315,9 +315,9 @@ class ExecutionNode(Node):
         Save data from all cognitive nodes in this execution node.
 
         :param response: The response indicating the success of the operation.
-        :type response: core_interfaces.srv.SaveNode_Response
+        :type response: core_interfaces.srv.SaveNode.Response
         :return: The response indicating the success of the operation.
-        :rtype: core_interfaces.srv.SaveNode_Response
+        :rtype: core_interfaces.srv.SaveNode.Response
         """
 
         self.get_logger().info(f'Saving all the nodes from execution node {self.id}.')
@@ -354,11 +354,11 @@ class ExecutionNode(Node):
         Stop the execution of all cognitive nodes in this execution node.
 
         :param request: The request to stop execution.
-        :type request: core_interfaces.srv.StopExecution_Request
+        :type request: core_interfaces.srv.StopExecution.Request
         :param response: The response indicating the success of stopping execution.
-        :type response: core_interfaces.srv.StopExecution_Response
+        :type response: core_interfaces.srv.StopExecution.Response
         :return: The response indicating the success of stopping execution.
-        :rtype: core_interfaces.srv.StopExecution_Response
+        :rtype: core_interfaces.srv.StopExecution.Response
         """
 
         self.get_logger().info(f'Stopping execution of every cognitive nodes in execution node {self.id}')

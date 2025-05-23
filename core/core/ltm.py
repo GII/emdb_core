@@ -195,11 +195,11 @@ class LTM(Node):
         and sets the 'added' attribute to True.
 
         :param request: The service request containing the node's name, type, and data.
-        :type request: core_interfaces.srv.AddNodeToLTM_Request
+        :type request: core_interfaces.srv.AddNodeToLTM.Request
         :param response: The service response.
-        :type response: core_interfaces.srv.AddNodeToLTM_Response
+        :type response: core_interfaces.srv.AddNodeToLTM.Response
         :return: The response indicating whether the node was added successfully.
-        :rtype: core_interfaces.srv.AddNodeToLTM_Response
+        :rtype: core_interfaces.srv.AddNodeToLTM.Response
         """
         name = str(request.name)
         node_type = str(request.node_type)
@@ -229,11 +229,11 @@ class LTM(Node):
 
         :param request: The service request containing the original and new name of the node, its type, 
                 and the new data for the node.
-        :type request: core_interfaces.srv.ReplaceNodeFromLTM_Request
+        :type request: core_interfaces.srv.ReplaceNodeFromLTM.Request
         :param response: The service response.
-        :type response: core_interfaces.srv.ReplaceNodeFromLTM_Response
+        :type response: core_interfaces.srv.ReplaceNodeFromLTM.Response
         :return: The response indicating whether the node was replaced successfully.
-        :rtype: core_interfaces.srv.ReplaceNodeFromLTM_Response
+        :rtype: core_interfaces.srv.ReplaceNodeFromLTM.Response
         """
         name = str(request.name)
         new_name = str(request.new_name)
@@ -266,11 +266,11 @@ class LTM(Node):
         If the node is not found, the 'deleted' attribute is set to False.
 
         :param request: The service request containing the name of the node to be deleted.
-        :type request: core_interfaces.srv.DeleteNodeFromLTM_Request
+        :type request: core_interfaces.srv.DeleteNodeFromLTM.Request
         :param response: The service response.
-        :type response: core_interfaces.srv.DeleteNodeFromLTM_Response
+        :type response: core_interfaces.srv.DeleteNodeFromLTM.Response
         :return: The response indicating whether the node was deleted successfully.
-        :rtype: core_interfaces.srv.DeleteNodeFromLTM_Response
+        :rtype: core_interfaces.srv.DeleteNodeFromLTM.Response
         """
         name = str(request.name)
         for node_type in self.cognitive_nodes:
@@ -294,11 +294,11 @@ class LTM(Node):
         If the node is not found, an empty string is returned.
 
         :param request: The service request containing the name of the node to retrieve.
-        :type request: core_interfaces.srv.GetNodeFromLTM_Request
+        :type request: core_interfaces.srv.GetNodeFromLTM.Request
         :param response: The service response containing the node data if found.
-        :type response: core_interfaces.srv.GetNodeFromLTM_Response
+        :type response: core_interfaces.srv.GetNodeFromLTM.Response
         :return: The response with the node data in YAML format or an empty string.
-        :rtype: core_interfaces.srv.GetNodeFromLTM_Response
+        :rtype: core_interfaces.srv.GetNodeFromLTM.Response
         """        
         name = str(request.name)
 
@@ -328,11 +328,11 @@ class LTM(Node):
         Sets the topic for tracking changes in the LTM.
 
         :param request: The service request containing the boolean value for the changes topic.
-        :type request: core_interfaces.srv.SetChangesTopic_Request
+        :type request: core_interfaces.srv.SetChangesTopic.Request
         :param response: The service response confirming the updated changes topic.
-        :type response: core_interfaces.srv.SetChangesTopic_Response
+        :type response: core_interfaces.srv.SetChangesTopic.Response
         :return: The response with the updated changes topic value.
-        :rtype: core_interfaces.srv.SetChangesTopic_Response
+        :rtype: core_interfaces.srv.SetChangesTopic.Response
         """        
         changes_topic = request.changes_topic
         self.changes_topic = changes_topic
@@ -346,11 +346,11 @@ class LTM(Node):
         Updates the neighbor relationship between two cognitive nodes.
 
         :param request: The service request containing the node name, neighbor name, and operation type.
-        :type request: core_interfaces.srv.UpdateNeighbor_Request
+        :type request: core_interfaces.srv.UpdateNeighbor.Request
         :param response: The service response indicating the success of the operation.
-        :type response: core_interfaces.srv.UpdateNeighbor_Response
+        :type response: core_interfaces.srv.UpdateNeighbor.Response
         :return: The response indicating whether the neighbor update was successful.
-        :rtype: core_interfaces.srv.UpdateNeighbor_Response
+        :rtype: core_interfaces.srv.UpdateNeighbor.Response
         """
         self.get_logger().info(f"Processing neighbor change")
         success=False
@@ -541,7 +541,7 @@ class LTM(Node):
         :param service_node_name: The name of the cognitive node whose 'add_neighbor' service will be called.
         :type service_node_name: str
         :return: The result of the service call.
-        :rtype: cognitive_node_interfaces.srv.AddNeighbor_Response
+        :rtype: cognitive_node_interfaces.srv.AddNeighbor.Response
         """
         service_name = 'cognitive_node/' + service_node_name + '/add_neighbor'
         if service_name not in self.node_clients:
@@ -560,7 +560,7 @@ class LTM(Node):
         :param service_node_name: The name of the cognitive node whose 'delete_neighbor' service will be called.
         :type service_node_name: str
         :return: The result of the service call.
-        :rtype: cognitive_node_interfaces.srv.DeleteNeighbor_Response
+        :rtype: cognitive_node_interfaces.srv.DeleteNeighbor.Response
         """
         service_name = 'cognitive_node/' + service_node_name + '/delete_neighbor'
         if service_name not in self.node_clients:
