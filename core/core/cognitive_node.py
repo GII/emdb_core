@@ -25,8 +25,9 @@ class CognitiveNode(Node):
         Initialize a CognitiveNode.
 
         :param name: The name of the node.
-        :param class_name: The name of the class, i.e: cognitive_nodes.perception.Perception.
-        :param params: Any other attribute of the node.
+        :type name: str
+        :param class_name: The name of the class, e.g., 'cognitive_nodes.perception.Perception'.
+        :type class_name: str
         """
         super().__init__(name)
         self.name = name
