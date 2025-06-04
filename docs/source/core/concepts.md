@@ -16,8 +16,8 @@ The following figure shows the proposed software architecture. This features a s
 
 - **Execution nodes**: They are responsible for executing the cognitive nodes in a configurable single-thread or multi-thread fashion using some load balancing strategy.
 - **Commander node**: A client component cannot directly manage the execution nodes. Instead, it interacts with the Commander node façade through its ROS2 interface (services and topics). The operations can be originated by a configuration file, cognitive processes or directly by the user via CLI.
-- **Long-term memory**: The LTM component is responsible for keeping a record of the specific cognitive nodes that are currently available, organized by their type.
-- **Cognitive Node**: Consists of an abstract class, which is intended to serve as the basis for the implementation of concrete cognitive node
+- **Long-Term Memory (LTM)**: The LTM component is responsible for keeping a record of the specific cognitive nodes that are currently available, organized by their type.
+- **Cognitive node**: Consists of an abstract class, which is intended to serve as the basis for the implementation of concrete cognitive node
 types.
 - **Cognitive node implementations**: These are the detailed implementations of each of the different cognitive nodes. [Click here](https://docs.pillar-robots.eu/projects/emdb_cognitive_nodes_gii/en/latest/) for more details.  
 - **Cognitive processes**: Implementation of particular cognitive processes, which use the cognitive nodes currently registered in the LTM. [Click here](https://docs.pillar-robots.eu/projects/emdb_cognitive_processes_gii/en/latest/) for more details. 

@@ -35,8 +35,10 @@ autodoc_mock_imports = [
     "rclpy",
     "std_msgs",
     "core_interfaces",
+    "cognitive_processes_interfaces",
     "cognitive_node_interfaces",
     "cognitive_nodes",
+    
 ]
 
 # -- Options for HTML output -------------------------------------------------
