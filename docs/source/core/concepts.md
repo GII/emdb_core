@@ -26,6 +26,6 @@ The following figure shows the dynamic view of the execution middleware and show
 
 ![Dynamic view illustrating the operation of the execution middleware at runtime.](../images/emdb_execution_core_dynamic_model_01.svg)
 
-## Topics and services
+<!-- ## Topics and services
 
-The components of the execution middleware define different topics and services as the ROS2 interface that is used to interact with them. The definition of this interface can be found in the [API Documentation](API.rst) section.
+The components of the execution middleware define different topics and services as the ROS2 interface that is used to interact with them. The definition of this interface can be found in the [Core API Documentation](API.rst) section. -->

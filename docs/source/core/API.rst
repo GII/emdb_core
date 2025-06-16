@@ -1,5 +1,5 @@
 =================
-API Documentation 
+Core
 =================
 
 Here you can find a description of all the scripts that compose the core, their specific services and topics,
@@ -140,71 +140,3 @@ ID is the identifier of the node, manually or automatically assigned. It is usua
     :members:
     :show-inheritance:
 
-++++++++++++++
-File
-++++++++++++++
-
-Python script to implement a file handler, which is responsible for writing files with data of the cognitive architecture.
-The files avaliable to write are:
-
-- **Goodness**: A file where several goodness statistics about an experiment are stored.
-- **P-Nodes Sucess**: A file that records wether a P-node's activation has been successful or not.
-- **Trials Sucess**: A file that record de number of trials to ahieve a goal and whether it was successful or not.
-- **P-Nodes Content**: A file that saves the contents of the P-Nodes every 100 iterations.
-- **Last Iteration P-Nodes Content**: A file that saves the contents of the P-Nodes at the last iteration of an experiment.
-- **Goals Content**: A file that saves the contents of the Goals every 100 iterations.
-- **Last Iteration Goals Content**: A file that saves the contents of the Goals at the last iteration of an experiment.
-- **Neighbors**: File specific to track the subgoals created by effectance.
-- **Neighbors Full**: A file that saves the full neighbor tree at the end of an experiment.
-
-The desired ouput files can be specified in the configuration file of the experiment.
-
-.. automodule:: core.file
-    :members:
-    :show-inheritance:
-
-++++++++++++++
-Service client
-++++++++++++++
-
-Python script to implement a service client, which is responsible for sending requests to the services of the system.
-
-.. automodule:: core.service_client
-    :members:
-    :show-inheritance:
-
-+++++
-Utils
-+++++
-
-Python script which implements functions used into the core.
-
-.. automodule:: core.utils
-    :members:
-    :show-inheritance:
-
-+++++++++++
-Dummy nodes
-+++++++++++
-
-Python scripts for the minimum implementation for each cognitive node. 
-The idea is to have cognitive nodes as barebones as possible to run experiments where we only want to focus on a specific cognitive node variation / algorithm.
-The dummy nodes avaliable are:
-
-**Drive**
-
-.. automodule:: dummy_nodes.dummy_drive
-    :members:
-    :show-inheritance:
-
-**Goal**
-
-.. automodule:: dummy_nodes.dummy_goal
-    :members:
-    :show-inheritance:
-
-**P-Node**
-
-.. automodule:: dummy_nodes.dummy_pnodes
-    :members:
-    :show-inheritance:

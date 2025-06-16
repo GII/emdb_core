@@ -13,8 +13,9 @@ This repository is dedicated to store the execution middleware (commander node +
 There are two sections in this documentation:
 
 - [Concepts](core/concepts.md): Theoretical aspects of the core elements of the architecture and its software design.
-- [API documentation](core/API.rst): Documentation of the Python scripts of the core.
-
+- [Core API documentation](core/API.rst): Documentation of the ROS2 interface of the core components, including services and topics.
+- [Dummy nodes API documentation](core/dn_API.rst): Documentation of the dummy nodes, which are minimal implementations of the cognitive nodes.
+- [Auxiliary scripts](core/as_API.rst): Documentation of the auxiliary scripts that are used in the core components.
 
 
 ```{toctree}
@@ -22,6 +23,14 @@ There are two sections in this documentation:
 :hidden:
 
 core/concepts.md
+```
+
+```{toctree}
+:caption: API Documentation
+:hidden:
+
 core/API.rst
+core/dn_API.rst
+core/as_API.rst
 ```
 
