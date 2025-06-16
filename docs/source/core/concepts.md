@@ -6,9 +6,14 @@ This section provides the main concepts related to the core elements of the cogn
 
 A execution middleware between ROS and the cognitive architecture has been devised. The objective here is to abstract the cognitive mechanism from everything related to execution (where to run a cognitive node, how to stop it, how to create a new one, etc.). Thanks to this middleware, the cognitive architecture will be able to dynamically create, modify, replace, and delete cognitive nodes, running in a dynamic set of computers, while preserving topics and services as the only ROS concepts that the cognitive nodes are aware of.
 
-The following figure shows the proposed software architecture. This features a simplified static view of the main software layers and how current and future developments should be organized. 
+The following figure shows the proposed software architecture. This features a simplified static view of the main software layers and how current and future developments should be organized.
+
+<div style="width:100%; margin:auto; text-align:center;">
 
 ![Static view of the layered architecture.](../images/emdb_layered_architecture_01.svg "Static view of the layered architecture.")
+
+*Static view of the layered architecture.*
+</div>
 
 
 
@@ -24,7 +29,12 @@ types.
 
 The following figure shows the dynamic view of the execution middleware and shows how the different components interact during runtime.
 
+<div style="width:100%; margin:auto; text-align:center;">
+
 ![Dynamic view illustrating the operation of the execution middleware at runtime.](../images/emdb_execution_core_dynamic_model_01.svg)
+
+*Dynamic view illustrating the operation of the execution middleware at runtime.*
+</div>
 
 <!-- ## Topics and services
 

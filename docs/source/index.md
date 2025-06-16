@@ -10,12 +10,12 @@ This repository is dedicated to store the execution middleware (commander node +
 - **core_interfaces:** Needed services and messages definitions.
 - **dummy_nodes:** Minimum implementation for each cognitive node. The idea is to have cognitive nodes as barebones as possible to run experiments where we only want to focus on a specific cognitive node variation / algorithm. In these cases, we want to reduce the remaining part of the cognitive architecture to a minimum functional set of elements, to avoid interferences when studying a specific change in a given cognitive node.
 
-There are two sections in this documentation:
+There are four sections in this documentation:
 
 - [Concepts](core/concepts.md): Theoretical aspects of the core elements of the architecture and its software design.
 - [Core API documentation](core/API.rst): Documentation of the ROS2 interface of the core components, including services and topics.
 - [Dummy nodes API documentation](core/dn_API.rst): Documentation of the dummy nodes, which are minimal implementations of the cognitive nodes.
-- [Auxiliary scripts](core/as_API.rst): Documentation of the auxiliary scripts that are used in the core components.
+- [Auxiliary scripts API documentation](core/as_API.rst): Documentation of the auxiliary scripts that are used in the core components.
 
 
 ```{toctree}
