@@ -5,7 +5,7 @@ import yaml
 from core.service_client import ServiceClient
 from cognitive_node_interfaces.msg import Activation
 from cognitive_node_interfaces.srv import SendSpace
-from cognitive_processes_interfaces.msg import Episode
+from cognitive_node_interfaces.msg import Episode
 from core_interfaces.srv import GetNodeFromLTM
 from core.utils import perception_msg_to_dict, separate_perceptions
 
