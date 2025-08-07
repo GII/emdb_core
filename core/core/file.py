@@ -59,7 +59,7 @@ class FileGoodness(File):
 
     def write(self):
         """Write statistics data."""
-        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in self.node.stm.reward_list.items()}
+        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in self.node.current_episode.reward_list.items()}
 
         self.file_object.write(
             str(self.node.iteration)

@@ -565,15 +565,18 @@ class CommanderNode(Node):
             self.get_logger().info(f'Loading file {experiment_file}')
 
             nodes = data['LTM']['Nodes']
-            
+            glob_params = {"globals": data['LTM'].get("Globals", {})}
+            glob_params['random_seed'] = self.random_seed
+            if data.get('Control'):
+                glob_params['Control'] = data['Control']
             for class_name, node_list in nodes.items():
                 for node in node_list:
                     name = node['name']
                     class_name = node['class_name']
                     if node.get('parameters'):
-                        parameters = str(node['parameters'])
+                        parameters = str({**node['parameters'], **glob_params})
                     else:
-                        parameters = ''
+                        parameters = str(glob_params)
                     self.get_logger().info(f"Loading {class_name} {name}...")
 
                     if self.node_exists(name):
@@ -581,7 +584,7 @@ class CommanderNode(Node):
 
                     else:
                         new_ex = node.get('new_executor', False)
-                        new_threads = node.get('thread', 1)
+                        new_threads = node.get('threads', 1)
                         if new_ex:
                             ex=self.add_execution_node(new_threads)
                         else:
@@ -605,10 +608,7 @@ class CommanderNode(Node):
                         params_dict['Files']=data['LTM']['Files']
                     if data['LTM'].get('Connectors'):
                         params_dict['Connectors']=data['LTM']['Connectors']
-                    if data.get('Control'):
-                        params_dict['Control']=data['Control']
-                    params_dict['random_seed']=self.random_seed
-                    parameters=str(params_dict)
+                    parameters=str({**params_dict, **glob_params})
 
                 self.get_logger().info(f"Loading {class_name} {name}...")
 

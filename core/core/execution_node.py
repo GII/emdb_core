@@ -396,8 +396,14 @@ def create_execution_node(id: int, threads: int, args=None):
     """
     rclpy.init(args=args)
     if threads>1:
+        rclpy.logging.get_logger(f"execution_node_{id}").info(
+            f"Creating multi-threaded executor with {threads} threads."
+        )
         executor=MultiThreadedExecutor(num_threads=threads)
     else:
+        rclpy.logging.get_logger(f"execution_node_{id}").info(
+            f"Creating single-threaded executor."
+        )
         executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor, id)
     executor.add_node(execution_node)
