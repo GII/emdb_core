@@ -4,6 +4,7 @@ import rclpy
 import yaml
 import importlib
 import asyncio
+import traceback    
 
 import rclpy.logging
 from rclpy.node import Node
@@ -411,6 +412,10 @@ def create_execution_node(id: int, threads: int, args=None):
         executor.spin()
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        rclpy.logging.get_logger(f"execution_node_{id}").error(
+            f"Unhandled exception: {e}\n{traceback.format_exc()}"
+        )
     finally:
         pass
         for node in execution_node.nodes.values():

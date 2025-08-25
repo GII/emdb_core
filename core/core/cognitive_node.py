@@ -102,7 +102,7 @@ class CognitiveNode(Node):
         )
 
         #Periodic publishing of activation
-        self.activation_publish_timer=self.create_timer(0.01, self.publish_activation_callback, callback_group=self.cbgroup_activation)
+        self.activation_publish_timer=self.create_timer(0.01, self.publish_activation_callback, callback_group=self.cbgroup_server)
 
         #Service clients to add or delete nodes from the LTM
         service_name_add_LTM = 'ltm_0' + '/add_node' # TODO choose LTM ID
@@ -387,7 +387,7 @@ class CognitiveNode(Node):
                 subscriber=self.create_subscription(Activation, 'cognitive_node/' + str(name) + '/activation', self.read_activation_callback, 1, callback_group=self.cbgroup_activation)
                 data=Activation()
                 updated=False
-                new_input=dict(subscriber=subscriber, data=data, updated=updated)
+                new_input=dict(subscriber=subscriber, node_type=node_type, data=data, updated=updated)
                 self.activation_inputs[name]=new_input
                 self.get_logger().debug(f'Created new activation input: {name} of type {node_type}')
             else:
