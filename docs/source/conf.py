@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath("../../dummy_nodes"))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "e-MDB Core"
-copyright = "2024, GII"
+copyright = "2025, GII"
 author = "GII"
 release = "Apache-2.0"
 
@@ -38,7 +38,8 @@ autodoc_mock_imports = [
     "cognitive_processes_interfaces",
     "cognitive_node_interfaces",
     "cognitive_nodes",
-    
+    "yaml",
+    "numpy",   
 ]
 
 # -- Options for HTML output -------------------------------------------------
