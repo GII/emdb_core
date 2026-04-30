@@ -1,8 +1,21 @@
 from __future__ import annotations
 import numpy as np
 import xarray as xr
+from array import array
 
 
+from core_interfaces.msg import Container as ContainerMsg
+
+DTYPE_TO_CODE = {
+    np.dtype(np.float32): 1,
+    np.dtype(np.float64): 2,
+    np.dtype(np.int32): 3,
+    np.dtype(np.int64): 4,
+    np.dtype(np.uint8): 5,
+    np.dtype(np.bool_): 6,
+}
+
+CODE_TO_DTYPE = {v: k for k, v in DTYPE_TO_CODE.items()}
 
 
 class Container:
@@ -20,59 +33,53 @@ class Container:
         return int(np.count_nonzero(valid))
     
     @property
-    def max_size(self) -> int:
-        return int(self.data.sizes["sample"])
-    
-    @property
-    def feature_dim(self) -> str:
-        feature_dims = [d for d in self.data.dims if d.endswith("_feature")]
-        if len(feature_dims) != 1:
-            raise ValueError(f"Container must have exactly one '*_feature' dim, got {feature_dims}")
-        return feature_dims[0]
-    
-    @property
     def feature_labels(self) -> list[str]:
         return self._feature_labels_cache.tolist()
 
-    def __init__(self, name, max_size: int, container_type: str, data_type=np.float64, labels: list = None) -> Container:
-        feature_dim = f"{name}_feature"
+    def __init__(self, name, max_size: int, container_type: str, data_type=np.float64, labels: list = None, attrs: dict = None) -> Container:
+        self.feature_dim = f"features"
+        self.container_type = container_type
         feature_labels = labels if labels is not None else []
         shape = (max_size, len(feature_labels))
 
         coords = {
-            feature_dim: feature_labels,
+            self.feature_dim: feature_labels,
             "timestamp": ("sample", np.zeros(max_size, dtype=np.float64)),
             "buffer_index": ("sample", np.full(max_size, -1).astype(np.uint32)),
             "valid": ("sample", np.zeros(max_size, dtype=bool)),
         }
-        attrs = {"type": container_type}
         data = np.full(shape, np.nan, dtype=data_type)
 
         self.data = xr.DataArray(
             data=data,
-            dims=["sample", feature_dim],
+            dims=["sample", self.feature_dim],
             coords=coords,
-            attrs=attrs,
             name=name,
+            attrs=attrs if attrs is not None else {},
         )
+        self.msg = ContainerMsg()
 
+        # Caches for access to frequently used data and metadata.
         self._feature_index_cache: dict[tuple[tuple[str, ...], tuple[str, ...]], np.ndarray] = {}
+        self._attrs_pairs_cache = None
+        self._attrs_written = False
 
         # Ring metadata for O(1) slot resolution.
         self._write_cursor = 0
         self._n_valid = 0
 
-        self._refresh_cached_indices()
+        self._refresh_cache()
 
     def __len__(self):
         return self.size
 
-    def _refresh_cached_indices(self) -> None:
+    def _refresh_cache(self) -> None:
         self._valid_cache = self.data.coords["valid"].values
         self._buffer_index_cache = self.data.coords["buffer_index"].values
         self._timestamp_cache = self.data.coords["timestamp"].values
         self._feature_cache = self.data.values
         self._feature_labels_cache = self.data.coords[self.feature_dim].values
+        self.max_size = int(self.data.sizes["sample"])
 
     def _get_feature_take_indices(
         self,
@@ -188,7 +195,7 @@ class Container:
 
         if n_new + prev_n > cap:
             # Wraping case: new slots will overwrite some of the oldest valid slots.
-            buffer_indexes = np.remainder(buffer_indexes - n_new, cap)
+            buffer_indexes[:] = np.remainder(buffer_indexes - n_new, cap)
 
         else:
             # Non-wrapping case: just mark new slots as valid with correct buffer_index.
@@ -222,6 +229,8 @@ class Container:
     def push(
         self,
         sample: Container | np.ndarray,
+        src_labels: list[str] | None = None,
+        src_dtype: np.dtype | None = None,
         timestamps: np.ndarray | None = None,
     ) -> int | np.ndarray:
         if isinstance(sample, Container):
@@ -248,14 +257,28 @@ class Container:
 
         else:
             n_features = len(self.feature_labels)
+
+            if src_dtype is None:
+                src_dtype = sample.dtype
+
+            if src_dtype != self.data.dtype and not np.can_cast(src_dtype, self.data.dtype, casting="same_kind"):
+                raise ValueError("Cannot cast src_dtype to self.data.dtype")
+
             values = np.asarray(sample, dtype=self.data.dtype)
+
             if values.ndim == 1:
                 values = values.reshape(1, -1)
             elif values.ndim != 2:
                 raise ValueError(f"sample ndarray must be 1D or 2D, got {values.shape}")
 
-            if values.shape[1] != n_features:
-                raise ValueError(f"sample must have {n_features} features, got {values.shape[1]}")
+            if src_labels is not None:
+                src_labels = tuple(str(x) for x in src_labels)
+                dst_labels = tuple(str(x) for x in self.feature_labels)
+                if src_labels != dst_labels:
+                    take_idx = self._get_feature_take_indices(src_labels, dst_labels)
+                    values = np.take(values, take_idx, axis=1)
+            elif values.shape[1] != n_features:
+                    raise ValueError(f"sample must have {n_features} features, got {values.shape[1]}")
 
             if timestamps is None:
                 raise ValueError("timestamps ndarray is required when sample is ndarray")
@@ -277,6 +300,10 @@ class Container:
         written_slots = self._write_slot(slots, values, ts)
 
         return int(written_slots[0]) if written_slots.size == 1 else written_slots
+    
+    def push_from_msg(self, msg: ContainerMsg):
+        values, ts, feature_labels, dtype, attrs = self.decode_container_msg_payload(msg)
+        return self.push(values, src_labels=feature_labels, src_dtype=dtype, timestamps=ts)
 
     def clear(self) -> None:
         self._valid_cache[:] = False
@@ -316,8 +343,107 @@ class Container:
 
         return out.isel(sample=np.argsort(out.coords["buffer_index"].values, kind="stable"))
 
-    def read_slots(self, slots: int | slice | list[int] | np.ndarray) -> xr.DataArray:
-        return self.data.isel(sample=slots)
+    def read_slots(self, slots: int | slice | list[int] | np.ndarray) -> np.ndarray:
+        return self._feature_cache[slots]
     
-    
+    def _read_ordered_numpy(self):
+        n = int(self._n_valid)
+        if n == 0:
+            return self._feature_cache[:0], self._timestamp_cache[:0]
 
+        start = (self._write_cursor - n) % self.max_size
+        end = start + n
+
+        if end <= self.max_size:
+            # zero-copy views
+            return self._feature_cache[start:end], self._timestamp_cache[start:end]
+
+        # one allocation each
+        v = np.concatenate((self._feature_cache[start:], self._feature_cache[:end % self.max_size]), axis=0)
+        t = np.concatenate((self._timestamp_cache[start:], self._timestamp_cache[:end % self.max_size]), axis=0)
+        return v, t
+    
+    def to_msg(self) -> ContainerMsg:
+
+        values, ts = self._read_ordered_numpy()
+
+        dtype = values.dtype
+        if dtype not in DTYPE_TO_CODE:
+            raise ValueError(f"Unsupported dtype {dtype}")
+
+        self.msg.name = self.name or ""
+        self.msg.container_type = str(self.data.attrs.get("type", ""))
+
+        self.msg.feature_labels = self.feature_labels
+        self.msg.max_size = int(self.max_size)
+        self.msg.n_rows = int(values.shape[0])
+
+        self.msg.dtype_code = DTYPE_TO_CODE[dtype]
+        self.msg.little_endian = (values.dtype.byteorder in ("<", "=") and np.little_endian)
+
+        payload = array('B')  # Clear previous contents
+        payload.frombytes(values.tobytes(order="C"))
+        self.msg.data_bytes = payload
+
+        ts_payload = array('d')
+        ts_payload.frombytes(ts.tobytes(order="C"))
+        self.msg.timestamps = ts_payload
+
+        attrs = self.data.attrs
+        if not attrs:
+            if self._attrs_written:
+                self.msg.attrs_keys = []
+                self.msg.attrs_values = []
+                self._attrs_written = False
+                self._attrs_pairs_cache = None
+        else:
+            pairs = tuple((str(k), str(v)) for k, v in attrs.items())
+            if pairs != self._attrs_pairs_cache:
+                self.msg.attrs_keys = [k for k, _ in pairs]
+                self.msg.attrs_values = [v for _, v in pairs]
+                self._attrs_pairs_cache = pairs
+                self._attrs_written = True
+        return self.msg
+
+    @staticmethod
+    def decode_container_msg_payload(msg):
+        dtype = CODE_TO_DTYPE[msg.dtype_code]
+        n_rows = int(msg.n_rows)
+        n_features = len(msg.feature_labels)
+
+        # Minimal-copy path from uint8[] payload
+        raw = np.asarray(msg.data_bytes, dtype=np.uint8)
+        values = np.frombuffer(raw.tobytes(), dtype=dtype)
+        if values.size != n_rows * n_features:
+            raise ValueError("payload size mismatch")
+        values = values.reshape(n_rows, n_features)
+
+        ts = np.asarray(msg.timestamps, dtype=np.float64)
+        if ts.size != n_rows:
+            raise ValueError("timestamps size mismatch")
+
+        # Endianness guard
+        if bool(msg.little_endian) != bool(np.little_endian):
+            values = values.byteswap().newbyteorder()
+
+        if msg.attrs_keys and msg.attrs_values:
+            attrs = {k: v for k, v in zip(msg.attrs_keys, msg.attrs_values)}
+        else:
+            attrs = {}
+
+        return values, ts, list(msg.feature_labels), dtype, attrs
+    
+    @classmethod
+    def from_msg(cls, msg: ContainerMsg, max_size: None | int = None) -> Container:
+        values, ts, feature_labels, dtype, attrs = cls.decode_container_msg_payload(msg)
+
+        container = cls(
+            name=msg.name,
+            max_size=max_size if max_size is not None else msg.max_size,
+            container_type=msg.container_type,
+            data_type=dtype,
+            labels=feature_labels,
+            attrs=attrs
+        )
+        container.push(values, src_labels=feature_labels, src_dtype=dtype, timestamps=ts)
+        return container
