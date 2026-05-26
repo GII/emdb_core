@@ -8,7 +8,7 @@ from rclpy.time import Time
 
 from core.service_client import ServiceClient, ServiceClientAsync
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
-from cognitive_node_interfaces.srv import GetActivation, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
+from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
 from cognitive_node_interfaces.msg import Activation
 from core.utils import perception_msg_to_dict
 
@@ -72,6 +72,13 @@ class CognitiveNode(Node):
             'cognitive_node/' + str(name) + '/get_activation',
             self.get_activation_callback, callback_group=self.cbgroup_activation
         )
+
+        # Get Confidence Service
+        self.get_confidence_service = self.create_service(
+            GetConfidence,
+            'cognitive_node/' + str(name) + '/get_confidence',
+            self.get_confidence_callback, callback_group=self.cbgroup_activation
+        )   
         
         # Get Information Service
         self.get_information_service = self.create_service(
@@ -238,7 +245,14 @@ class CognitiveNode(Node):
         self.publish_activation_topic.publish(activation)
         self.get_logger().debug("Activation for " + str(activation.node_type) + str(activation.node_name) +
                             ": " + str(activation.activation))
-    
+        
+    def calculate_confidence(self, perception, activation_list):
+        """
+        TODO: this is a dummy method, WIP, 
+        """
+        self.get_logger().info(f'Calculating confidence for {self.node_type} {self.name}...')
+        raise NotImplementedError
+
     def add_neighbor_callback(self, request, response):
         """
         Add a neighbor to the nodes neighbors collection.
@@ -307,6 +321,29 @@ class CognitiveNode(Node):
             self.calculate_activation(perception)
         response.activation = float(self.activation.activation)
         return response
+    
+    
+    async def get_confidence_callback(self, request, response):
+        """
+        Callback method to calculate and return the node's confidence.
+        This method calculates the confidence of the node based on its perception.
+
+        :param request: The request containing the perception data.
+        :type request: cognitive_node_interfaces.srv.GetConfidence.Request
+        :param response: The response that will contain the calculated confidence.
+        :type response: cognitive_node_interfaces.srv.GetConfidence.Response
+        :return: The response with the calculated confidence.
+        :rtype: cognitive_node_interfaces.srv.GetConfidence.Response
+        """
+        self.get_logger().debug('Getting node confidence...')
+        perception = perception_msg_to_dict(request.perception)
+        if inspect.iscoroutinefunction(self.calculate_confidence):
+            await self.calculate_confidence(perception)
+        else:
+            self.calculate_confidence(perception)
+        response.confidence = float(self.confidence)
+        return response
+    
 
     def get_information_callback(self, request, response):
         """
@@ -371,7 +408,9 @@ class CognitiveNode(Node):
                     self.calculate_activation(perception=None, activation_list=self.activation_inputs)
                 for node_name in self.activation_inputs:
                     self.activation_inputs[node_name]['updated']=False
+            self.activation.metacognitive_params.confidence = self.calculate_confidence(perception=None, activation_list=self.activation_inputs)
             self.publish_activation(self.activation)
+
 
     def create_activation_input(self, node: dict):
         """
@@ -501,6 +540,7 @@ class CognitiveNode(Node):
             name=name, class_name=class_name, parameters=params_str
         )
         return response
+    
 
 
     def __str__(self):
