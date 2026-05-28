@@ -2,15 +2,16 @@ import yaml
 import inspect
 import numpy
 from rclpy.node import Node
-from rclpy import spin_until_future_complete
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
 
-from core.service_client import ServiceClient, ServiceClientAsync
+from core.service_client import ServiceClientAsync
+from core.container import Container
+
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
 from cognitive_node_interfaces.srv import GetActivation, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
 from cognitive_node_interfaces.msg import Activation
-from core.utils import perception_msg_to_dict
+
 
 class CognitiveNode(Node):
     """
@@ -35,8 +36,6 @@ class CognitiveNode(Node):
         _, _, node_type = self.class_name.rpartition(".")
         self.node_type = node_type
 
-        self.perception = None
-
         self.neighbors = [] # List of dics, like [{"name": "pnode1", "node_type": "PNode"}, {"name": "cnode1", "node_type": "CNode"}]
         
         #List that contains subscribers of the activation of the node's neighbors
@@ -45,9 +44,6 @@ class CognitiveNode(Node):
         self.activation = Activation()
         self.activation.node_name=self.name
         self.activation.node_type=self.node_type
-
-        self.perception = []
-        self.threshold = 0.0
 
         for key, value in params.items():
             setattr(self, key, value)
@@ -300,12 +296,12 @@ class CognitiveNode(Node):
         :rtype: cognitive_node_interfaces.srv.GetActivation.Response
         """
         self.get_logger().debug('Getting node activation...')
-        perception = perception_msg_to_dict(request.perception)
+        perception = Container.from_msg(request.perception)
         if inspect.iscoroutinefunction(self.calculate_activation):
-            await self.calculate_activation(perception)
+            activation = await self.calculate_activation(perception)
         else:
-            self.calculate_activation(perception)
-        response.activation = float(self.activation.activation)
+            activation = self.calculate_activation(perception)
+        response.activation = activation
         return response
 
     def get_information_callback(self, request, response):

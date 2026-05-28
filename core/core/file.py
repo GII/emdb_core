@@ -8,19 +8,21 @@ from cognitive_node_interfaces.msg import Activation
 from cognitive_node_interfaces.srv import SendSpace, SaveModel
 from cognitive_node_interfaces.msg import SuccessRate
 from core_interfaces.srv import GetNodeFromLTM
-from core.utils import perception_msg_to_dict, separate_perceptions
 from cognitive_nodes.episodic_buffer import EpisodicBuffer
-from cognitive_nodes.episode import episode_msg_to_obj
+from cognitive_nodes.episode import container_to_episode_obj
+
 
 class File():
     """A MDB file."""
 
-    def __init__(self, ident, file_name, node, **params):
+    def __init__(self, ident, file_name, node, flush_freq=10, **params):
         """Init attributes when a new object is created."""
         self.ident = ident
         self.file_name = file_name
         self.file_object = None
         self.node = node
+        self.write_count = 0
+        self.flush_freq = flush_freq
 
     def __getstate__(self):
         """
@@ -61,7 +63,10 @@ class File():
         """Write data to the file."""
         if self.file_object:
             self.file_object.write(data)
-            self.file_object.flush()
+            self.write_count += 1
+            if self.write_count % self.flush_freq == 0:
+                self.file_object.flush()
+
 
 class FileGoodness(File):
     """A file where several goodness statistics about an experiment are stored."""
@@ -397,12 +402,12 @@ class FileEpisodesDataset(File):
         super().__init__(**kwargs)
         self.episodic_buffer = EpisodicBuffer(self.node, main_size=None, secondary_size=0, inputs=["old_perception", "action",
                                                                                                     "parent_policy", 
-                                                                                                    "perception", "reward_list"])
+                                                                                                    "perception", "rewards"])
         self.semaphore = threading.Semaphore()
 
     def write_episode(self, msg):
         self.semaphore.acquire()
-        episode = episode_msg_to_obj(msg)
+        episode = container_to_episode_obj(msg)
         self.node.get_logger().debug(f"Received episode to write: {episode}")
         self.episodic_buffer.add_episode(episode)
         self.node.get_logger().debug(f"Episodic buffer size: {self.episodic_buffer.main_size}")
