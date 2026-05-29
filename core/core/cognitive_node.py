@@ -208,7 +208,11 @@ class CognitiveNode(Node):
         :param activation_list: Dictionary with the activation of multiple nodes. 
         :type activation_list: dict
         """        
-        node_activations = [activation_list[node_name]['data'].activation for node_name in activation_list]
+        # Weight each neighbor activation by its provided confidence (default 1.0)
+        node_activations = [
+            float(activation_list[node_name]['data'].activation) * float(activation_list[node_name].get('confidence', 1.0))
+            for node_name in activation_list
+        ]
         timestamp, _ = self.extract_oldest_timestamp(activation_list)
         if len(node_activations)!=0:
             activation=numpy.prod(node_activations)
@@ -543,6 +547,51 @@ class CognitiveNode(Node):
     
 
 
+    def _yaml_safe_value(self, value):
+        """
+        Convert a value into a YAML-safe representation without recursing into
+        arbitrary ROS object graphs.
+        """
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+
+        if isinstance(value, numpy.generic):
+            return value.item()
+
+        if isinstance(value, numpy.ndarray):
+            return value.tolist()
+
+        if isinstance(value, Time):
+            return value.nanoseconds
+
+        if isinstance(value, dict):
+            return {
+                str(key): self._yaml_safe_value(item)
+                for key, item in value.items()
+                if not str(key).startswith('_')
+            }
+
+        if isinstance(value, (list, tuple, set)):
+            return [self._yaml_safe_value(item) for item in value]
+
+        activation_type = type(self.activation)
+        if isinstance(value, activation_type):
+            return {
+                'node_name': value.node_name,
+                'node_type': value.node_type,
+                'activation': float(value.activation),
+                'timestamp': Time.from_msg(value.timestamp).nanoseconds,
+            }
+
+        if hasattr(value, 'name') and hasattr(value, 'node_type') and hasattr(value, 'activation'):
+            return {
+                'name': str(value.name),
+                'node_type': str(value.node_type),
+                'activation': self._yaml_safe_value(getattr(value, 'activation')),
+            }
+
+        return str(value)
+
     def __str__(self):
         """
         Returns a YAML representation of the node's data.
@@ -550,8 +599,31 @@ class CognitiveNode(Node):
         :return: YAML representation of the node's data.
         :rtype: str
         """
-        data = self.get_data()
-        return yaml.dump(data, default_flow_style=False)
+        data = {}
+        excluded_keys = {
+            'activation_inputs',
+            'activation_publish_timer',
+            'add_neighbor_service',
+            'add_node_to_LTM_client',
+            'add_point_service',
+            'add_points_service',
+            'cbgroup_activation',
+            'cbgroup_client',
+            'cbgroup_server',
+            'contains_space_service',
+            'delete_neighbor_service',
+            'delete_node_client',
+            'history',
+            'node_clients',
+            'publish_activation_topic',
+            'save_model_service',
+            'send_pnode_space_service',
+            'spaces',
+        }
+        for key, value in self.get_data().items():
+            if key not in excluded_keys:
+                data[key] = self._yaml_safe_value(value)
+        return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
 
 def main(args=None):
     pass

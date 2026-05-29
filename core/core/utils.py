@@ -153,12 +153,24 @@ def separate_perceptions(perception):
     :rtype: list
     """
     perceptions = []
-    for i in range(max([len(sensor) for sensor in perception.values()])):
-            perception_line = {} 
-            for sensor, value in perception.items():
-                sid = i % len(value)
-                perception_line[sensor + str(sid)] = value[sid]
-            perceptions.append(perception_line)
+    if not perception:
+        return perceptions
+
+    sensor_sizes = []
+    for sensor_values in perception.values():
+        if sensor_values is None:
+            return perceptions
+        size = len(sensor_values)
+        if size == 0:
+            return perceptions
+        sensor_sizes.append(size)
+
+    for i in range(max(sensor_sizes)):
+        perception_line = {}
+        for sensor, value in perception.items():
+            sid = i % len(value)
+            perception_line[sensor + str(sid)] = value[sid]
+        perceptions.append(perception_line)
 
     return perceptions
 
