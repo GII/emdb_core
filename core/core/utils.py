@@ -194,8 +194,8 @@ def compare_perceptions(input_1, input_2, thresh=0.01, label_mode="equal"):
             return False
         labels = labels_1.intersection(labels_2)
     label_list = list(labels)
-    data_1 = input_1.read().sel(feature_labels=label_list).values
-    data_2 = input_2.read().sel(feature_labels=label_list).values
+    data_1 = input_1.read().sel(features=label_list).values
+    data_2 = input_2.read().sel(features=label_list).values
 
     if data_1.shape[0] != data_2.shape[0]:
         return False

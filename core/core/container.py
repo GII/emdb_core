@@ -372,7 +372,7 @@ class Container:
             raise ValueError(f"Unsupported dtype {dtype}")
 
         self.msg.name = self.name or ""
-        self.msg.container_type = str(self.data.attrs.get("type", ""))
+        self.msg.container_type = self.container_type
 
         self.msg.feature_labels = self.feature_labels
         self.msg.max_size = int(self.max_size)
@@ -484,8 +484,9 @@ def consolidate_containers(containers: list[Container], write_container: Contain
     new_labels = []
     data = [container._read_ordered_numpy() for container in containers]
     features = np.concatenate([features for features, timestamps in data], axis=1) # Concatenate features along feature dimension
-    timestamps = np.concatenate([timestamps for features, timestamps in data], axis=1) # Concatenate timestamps for each sample across containers (shape: n_samples x n_containers)
-    oldest_timestamp = np.min(timestamps, axis=1) if timestamps.size > 0 else 0.0 # Get the oldest timestamp for each sample across all containers
+    timestamps_list = [timestamps.reshape(-1, 1) for features, timestamps in data]
+    timestamps = np.concatenate(timestamps_list, axis=1) # Concatenate timestamps for each sample across containers (shape: n_samples x n_containers)
+    oldest_timestamps = np.min(timestamps, axis=1) if timestamps.size > 0 else 0.0 # Get the oldest timestamp for each sample across all containers
     for container in containers:
         new_labels.extend([f"{container.name}:{label}" for label in container.feature_labels])
 
@@ -506,7 +507,7 @@ def consolidate_containers(containers: list[Container], write_container: Contain
         if labels_mode == "extend":
             pass # A new container will be created with the extended set of labels, so no need to modify the write_container's labels.  
         elif labels_mode == "original":
-            write_container.push(features, src_labels=new_labels, src_dtype=dtype, timestamps=oldest_timestamp)
+            write_container.push(features, src_labels=new_labels, src_dtype=dtype, timestamps=oldest_timestamps)
             return write_container
         else:
             raise ValueError(f"Invalid labels_mode: {labels_mode}")
@@ -519,7 +520,7 @@ def consolidate_containers(containers: list[Container], write_container: Contain
         labels=new_labels,
         attrs=attrs,
     )
-    new_container.push(features, src_labels=new_labels, src_dtype=features.dtype, timestamps=timestamps)
+    new_container.push(features, src_labels=new_labels, src_dtype=features.dtype, timestamps=oldest_timestamps)
     return new_container
 
     
