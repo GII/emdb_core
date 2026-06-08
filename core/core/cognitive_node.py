@@ -9,7 +9,7 @@ from rclpy.time import Time
 from core.service_client import ServiceClient, ServiceClientAsync
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
 from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
-from cognitive_node_interfaces.msg import Activation
+from cognitive_node_interfaces.msg import Activation, MetacognitiveParameters
 from core.utils import perception_msg_to_dict
 
 class CognitiveNode(Node):
@@ -38,19 +38,25 @@ class CognitiveNode(Node):
         self.perception = None
 
         self.neighbors = [] # List of dics, like [{"name": "pnode1", "node_type": "PNode"}, {"name": "cnode1", "node_type": "CNode"}]
-        
+
         #List that contains subscribers of the activation of the node's neighbors
         self.activation_inputs={}
         self.activation_topic = True
         self.activation = Activation()
+        self.activation.metacognitive_params = MetacognitiveParameters()
         self.activation.node_name=self.name
         self.activation.node_type=self.node_type
 
         self.perception = []
         self.threshold = 0.0
+        self.hyperparameters = {}  # Store hyperparameters received
 
         for key, value in params.items():
             setattr(self, key, value)
+
+        # Store initial hyperparameters
+        self.hyperparameters = params.copy()
+        self._update_activation_hyperparameters()
 
         #Callback groups to separate between service requests, service calls and activation callbacks
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
@@ -116,7 +122,26 @@ class CognitiveNode(Node):
         self.add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name_add_LTM, self.cbgroup_client)
         service_name_delete_LTM = 'ltm_0' + '/delete_node' # TODO: choose the ltm ID
         self.delete_node_client = ServiceClientAsync(self, DeleteNodeFromLTM, service_name_delete_LTM, self.cbgroup_client)
-    
+
+    def _update_activation_hyperparameters(self):
+        """
+        Update the hyperparameters in the activation message.
+        Converts current hyperparameters to YAML string for storage.
+        """
+        self.activation.metacognitive_params.hyperparameters = yaml.dump(self.hyperparameters)
+
+    def update_hyperparameters(self, new_params):
+        """
+        Update node hyperparameters with new values.
+
+        :param new_params: Dictionary with new hyperparameter values.
+        :type new_params: dict
+        """
+        self.hyperparameters.update(new_params)
+        for key, value in new_params.items():
+            setattr(self, key, value)
+        self._update_activation_hyperparameters()
+
     def get_data(self):
         """
         Get the data associated with the node.
@@ -146,7 +171,7 @@ class CognitiveNode(Node):
     
     async def register_in_LTM(self, data_dic):
         """
-        Requests registering the node in the LTM. 
+        Requests registering the node in the LTM.
 
         :param data_dic: A dictionary with the data to be saved.
         :type data_dic: dict
@@ -154,8 +179,11 @@ class CognitiveNode(Node):
         :rtype: rclpy.task.Future
         """
         self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
-        
-        data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors})
+
+        # Update hyperparameters before saving
+        self._update_activation_hyperparameters()
+
+        data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors, 'hyperparameters': self.hyperparameters})
 
         ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
         await ltm_response
@@ -397,13 +425,13 @@ class CognitiveNode(Node):
     async def publish_activation_callback(self):
         """
         Timed publish of the activation value. This method will calculate the activation based on the neighbor's activation, and then publish it in the corresponding topic.
-        """        
+        """
         if self.activation_topic:
             if len(self.activation_inputs)==0: #Calculates activation when there are no inputs configured (Support for custom nodes)
                 updated=True
             else:
                 self.get_logger().debug(f'Activation Inputs: {str(self.activation_inputs)}')
-                updated= all((self.activation_inputs[node_name]['updated'] for node_name in self.activation_inputs)) 
+                updated= all((self.activation_inputs[node_name]['updated'] for node_name in self.activation_inputs))
 
             if updated:
                 if inspect.iscoroutinefunction(self.calculate_activation):
@@ -413,6 +441,7 @@ class CognitiveNode(Node):
                 for node_name in self.activation_inputs:
                     self.activation_inputs[node_name]['updated']=False
             self.activation.metacognitive_params.confidence = self.calculate_confidence(perception=None, activation_list=self.activation_inputs)
+            self._update_activation_hyperparameters()
             self.publish_activation(self.activation)
 
 
