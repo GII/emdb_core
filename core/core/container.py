@@ -18,6 +18,25 @@ DTYPE_TO_CODE = {
 CODE_TO_DTYPE = {v: k for k, v in DTYPE_TO_CODE.items()}
 
 
+def _format_debug_table(columns: list[str], rows: list[list[str]]) -> str:
+    """Simple monospace table formatter for __repr__ output."""
+    if not columns:
+        return ""
+
+    widths = [len(str(c)) for c in columns]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(str(cell)))
+
+    def fmt_row(row_vals: list[str]) -> str:
+        return " | ".join(str(v).ljust(widths[i]) for i, v in enumerate(row_vals))
+
+    sep = "-+-".join("-" * w for w in widths)
+    lines = [fmt_row(columns), sep]
+    lines.extend(fmt_row(r) for r in rows)
+    return "\n".join(lines)
+
+
 class Container:
     @property
     def name(self) -> str | None:
@@ -322,10 +341,11 @@ class Container:
             return self.data.isel(sample=slots)
 
         ordered_slots = self._ordered_all_valid_slots()
+        n = ordered_slots.size
 
-        if isinstance(index, int):
-            if abs(index) >= ordered_slots.size:
-                raise IndexError(f"buffer_index {index} out of range [0, {ordered_slots.size - 1}]")
+        if isinstance(index, (int, np.integer)):
+            if index >= n or index < -n:
+                raise IndexError(f"buffer_index {index} out of range [{-n}, {n - 1}]")
             slots = np.array([ordered_slots[index]], dtype=np.int64)
         elif isinstance(index, slice):
             slots = ordered_slots[index]
@@ -333,8 +353,8 @@ class Container:
             buffer_indexes = np.asarray(index, dtype=np.int64)
             if buffer_indexes.ndim != 1:
                 raise ValueError("index array must be 1-dimensional")
-            if np.any((buffer_indexes < 0) | (buffer_indexes >= ordered_slots.size)):
-                raise IndexError(f"buffer_index out of range [0, {ordered_slots.size - 1}]")
+            if np.any((buffer_indexes < -n) | (buffer_indexes >= n)):
+                raise IndexError(f"buffer_index out of range [{-n}, {n - 1}]")
             slots = ordered_slots[buffer_indexes]
 
         out = self.data.isel(sample=slots)
@@ -469,6 +489,48 @@ class Container:
         )
         container.push(data_array.values, src_labels=feature_labels, src_dtype=data_array.dtype, timestamps=data_array.coords.get("timestamp", np.zeros(data_array.sizes["sample"])))
         return container
+    
+    def __repr__(self) -> str:
+        labels = [str(x) for x in self.feature_labels]
+        header = (
+            f"Container(name={self.name!r}, type={self.container_type!r}, "
+            f"dtype={self.data.dtype}, size={self.size}/{self.max_size}, "
+            f"n_features={len(labels)})"
+        )
+
+        ordered_slots = self._ordered_all_valid_slots()
+        if ordered_slots.size == 0:
+            return f"{header}\n<empty>"
+
+        max_rows = 10
+        shown_slots = ordered_slots[:max_rows]
+
+        columns = ["buffer_index", "slot", "timestamp", *labels]
+        rows: list[list[str]] = []
+
+        values = self._feature_cache[shown_slots]
+        ts = self._timestamp_cache[shown_slots]
+        bi = self._buffer_index_cache[shown_slots]
+
+        for i, slot in enumerate(shown_slots):
+            row = [
+                str(int(bi[i])),
+                str(int(slot)),
+                f"{float(ts[i]):.6g}",
+            ]
+            for v in values[i]:
+                if isinstance(v, (np.floating, float)):
+                    row.append(f"{float(v):.6g}")
+                else:
+                    row.append(str(v))
+            rows.append(row)
+
+        table = _format_debug_table(columns, rows)
+        suffix = ""
+        if ordered_slots.size > max_rows:
+            suffix = f"\n... {ordered_slots.size - max_rows} more row(s) not shown"
+
+        return f"{header}\n{table}{suffix}"
 
 ## Helper methods for Containers
 
@@ -502,7 +564,7 @@ def consolidate_containers(containers: list[Container], write_container: Contain
         labels_present = set(labels).issubset(set(new_labels))
 
         if not labels_present:
-            raise ValueError("Consolidation with incomplete labes is not supported yet. Please ensure all labels in the write_container are present in the input containers.")
+            raise ValueError("Consolidation with incomplete labels is not supported yet. Please ensure all labels in the write_container are present in the input containers.")
         
         if labels_mode == "extend":
             pass # A new container will be created with the extended set of labels, so no need to modify the write_container's labels.  
@@ -821,12 +883,13 @@ class MultiContainer:
             xr.DataArray with dims (sample, features) containing flattened trace data.
         """
         ordered_trace_slots = self._ordered_all_valid_trace_slots()
+        n = ordered_trace_slots.size
         
         if trace_index is None:
             trace_slots = ordered_trace_slots
         elif isinstance(trace_index, int):
-            if abs(trace_index) >= ordered_trace_slots.size:
-                raise IndexError(f"trace buffer_index {trace_index} out of range [0, {ordered_trace_slots.size - 1}]")
+            if trace_index >= n or trace_index < -n:
+                raise IndexError(f"trace buffer_index {trace_index} out of range [{-n}, {n - 1}]")
             trace_slots = np.array([ordered_trace_slots[trace_index]], dtype=np.int64)
         elif isinstance(trace_index, slice):
             trace_slots = ordered_trace_slots[trace_index]
@@ -834,8 +897,8 @@ class MultiContainer:
             buffer_indexes = np.asarray(trace_index, dtype=np.int64)
             if buffer_indexes.ndim != 1:
                 raise ValueError("trace_index array must be 1-dimensional")
-            if np.any((buffer_indexes < 0) | (buffer_indexes >= ordered_trace_slots.size)):
-                raise IndexError(f"trace buffer_index out of range [0, {ordered_trace_slots.size - 1}]")
+            if np.any((buffer_indexes < -n) | (buffer_indexes >= n)):
+                raise IndexError(f"trace buffer_index out of range [{-n}, {n - 1}]")
             trace_slots = ordered_trace_slots[buffer_indexes]
         
         concat_values, concat_ts = self._flatten_traces(trace_slots)
@@ -870,3 +933,49 @@ class MultiContainer:
         first = np.arange(start, self.max_traces, dtype=np.int64)
         second = np.arange(0, end % self.max_traces, dtype=np.int64)
         return np.concatenate((first, second))
+
+    def __repr__(self) -> str:
+        labels = [str(x) for x in self.feature_labels]
+        header = (
+            f"MultiContainer(name={self.name!r}, type={self.container_type!r}, "
+            f"dtype={self.data.dtype}, traces={self.n_traces}/{self.max_traces}, "
+            f"max_size={self.max_size}, n_features={len(labels)})"
+        )
+
+        ordered_traces = self._ordered_all_valid_trace_slots()
+        if ordered_traces.size == 0:
+            return f"{header}\n<empty>"
+
+        max_rows = 12
+        shown = ordered_traces[:max_rows]
+
+        columns = ["trace_buffer_index", "trace_slot", "n_samples", "t_first", "t_last"]
+        rows: list[list[str]] = []
+
+        for trace_slot in shown:
+            trace_slot = int(trace_slot)
+            n_samples = int(self._n_valid_samples[trace_slot])
+            trace_bi = int(self._buffer_index_trace_cache[trace_slot])
+
+            if n_samples > 0:
+                ts = self._timestamp_cache[trace_slot, :n_samples]
+                t_first = f"{float(ts[0]):.6g}"
+                t_last = f"{float(ts[-1]):.6g}"
+            else:
+                t_first = "-"
+                t_last = "-"
+
+            rows.append([
+                str(trace_bi),
+                str(trace_slot),
+                str(n_samples),
+                t_first,
+                t_last,
+            ])
+
+        table = _format_debug_table(columns, rows)
+        suffix = ""
+        if ordered_traces.size > max_rows:
+            suffix = f"\n... {ordered_traces.size - max_rows} more trace(s) not shown"
+
+        return f"{header}\n{table}{suffix}"
