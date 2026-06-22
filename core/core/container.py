@@ -100,30 +100,6 @@ class Container:
         self._feature_labels_cache = self.data.coords[self.feature_dim].values
         self.max_size = int(self.data.sizes["sample"])
 
-    def _get_feature_take_indices(
-        self,
-        src_labels: tuple[str, ...],
-        dst_labels: tuple[str, ...],
-    ) -> np.ndarray:
-        cache_key = (src_labels, dst_labels)
-        cached = self._feature_index_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        src_pos = {label: i for i, label in enumerate(src_labels)}
-        try:
-            take_idx = np.fromiter(
-                (src_pos[label] for label in dst_labels),
-                dtype=np.int64,
-                count=len(dst_labels),
-            )
-        except KeyError as exc:
-            missing = str(exc.args[0])
-            raise ValueError(f"Missing destination feature in source container: {missing}") from exc
-
-        self._feature_index_cache[cache_key] = take_idx
-        return take_idx
-    
     def _is_ring_step_sequence(self, slots: np.ndarray) -> bool:
         if slots.size <= 1:
             return True
@@ -245,15 +221,134 @@ class Container:
         self._update_buffer_index(slots)
         return slots
 
+    def _default_fill_value(self, fill_value: float | int | None) -> float | int | bool:
+        if fill_value is not None:
+            return fill_value
+        if np.issubdtype(self.data.dtype, np.floating):
+            return np.nan
+        if np.issubdtype(self.data.dtype, np.bool_):
+            return False
+        return 0
+    
+    def _get_feature_alignment_plan(
+        self,
+        src_labels: tuple[str, ...],
+        dst_labels: tuple[str, ...],
+    ) -> tuple[np.ndarray, np.ndarray, tuple[str, ...]]:
+        """
+        Returns:
+            take_idx: indices in src to read
+            dst_idx: positions in dst to write
+            missing: destination labels not present in source
+        """
+        cache_key = (src_labels, dst_labels)
+        cached = self._feature_index_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        src_pos = {label: i for i, label in enumerate(src_labels)}
+        take_idx = []
+        dst_idx = []
+        missing = []
+
+        for j, label in enumerate(dst_labels):
+            i = src_pos.get(label)
+            if i is None:
+                missing.append(label)
+            else:
+                take_idx.append(i)
+                dst_idx.append(j)
+
+        plan = (
+            np.asarray(take_idx, dtype=np.int64),
+            np.asarray(dst_idx, dtype=np.int64),
+            tuple(missing),
+        )
+        self._feature_index_cache[cache_key] = plan
+        return plan
+
+    def _extend_feature_labels(self, new_labels: list[str], fill_value: float | int | None = None) -> None:
+        old_labels = self.feature_labels
+        if new_labels == old_labels:
+            return
+
+        fill = self._default_fill_value(fill_value)
+        old_to_new = {label: i for i, label in enumerate(new_labels)}
+        new_data = np.full((self.max_size, len(new_labels)), fill, dtype=self.data.dtype)
+
+        for old_idx, label in enumerate(old_labels):
+            new_data[:, old_to_new[label]] = self._feature_cache[:, old_idx]
+
+        coords = {
+            self.feature_dim: new_labels,
+            "timestamp": ("sample", self._timestamp_cache.copy()),
+            "buffer_index": ("sample", self._buffer_index_cache.copy()),
+            "valid": ("sample", self._valid_cache.copy()),
+        }
+
+        self.data = xr.DataArray(
+            data=new_data,
+            dims=["sample", self.feature_dim],
+            coords=coords,
+            name=self.name,
+            attrs=self.data.attrs,
+        )
+        self._feature_index_cache.clear()
+        self._refresh_cache()
+
+    def _align_values_for_push(
+        self,
+        values: np.ndarray,
+        src_labels: tuple[str, ...],
+        extend_labels: bool = False,
+        allow_missing: bool = False,
+        fill_value: float | int | None = None,
+    ) -> np.ndarray:
+        dst_labels = tuple(str(x) for x in self.feature_labels)
+
+        if src_labels == dst_labels:
+            return np.asarray(values, dtype=self.data.dtype)
+
+        if extend_labels:
+            new_labels = list(dst_labels)
+            for label in src_labels:
+                if label not in new_labels:
+                    new_labels.append(label)
+
+            if new_labels != list(dst_labels):
+                self._extend_feature_labels(new_labels, fill_value=fill_value)
+                dst_labels = tuple(new_labels)
+
+        take_idx, dst_idx, missing = self._get_feature_alignment_plan(src_labels, dst_labels)
+
+        if missing and not allow_missing:
+            raise ValueError("Missing source labels: " + ", ".join(missing))
+
+        values = np.asarray(values, dtype=self.data.dtype)
+
+        # Fast path when nothing is missing and destination order is fully covered.
+        if not missing and take_idx.size == len(dst_labels):
+            return np.take(values, take_idx, axis=1)
+
+        fill = self._default_fill_value(fill_value)
+        aligned = np.full((values.shape[0], len(dst_labels)), fill, dtype=self.data.dtype)
+
+        if take_idx.size:
+            aligned[:, dst_idx] = np.take(values, take_idx, axis=1)
+
+        return aligned
+
     def push(
         self,
         sample: Container | np.ndarray,
         src_labels: list[str] | None = None,
         src_dtype: np.dtype | None = None,
         timestamps: np.ndarray | float | None = None,
+        extend_labels: bool = False,
+        allow_missing: bool = False,
+        fill_value: float | int | None = None,
     ) -> int | np.ndarray:
         if isinstance(sample, Container):
-            dst_labels = tuple(str(x) for x in self.feature_labels)
             src_data = sample.data
             src_valid = sample._valid_cache
             if not np.any(src_valid):
@@ -268,15 +363,15 @@ class Container:
             ts = sample._timestamp_cache[src_slots]
             src_labels = tuple(str(x) for x in sample.feature_labels)
 
-            if src_labels != dst_labels:
-                take_idx = self._get_feature_take_indices(src_labels, dst_labels)
-                values = np.take(values, take_idx, axis=1)
-
-            values = np.asarray(values, dtype=self.data.dtype)
+            values = self._align_values_for_push(
+                values,
+                src_labels,
+                extend_labels=extend_labels,
+                allow_missing=allow_missing,
+                fill_value=fill_value,
+            )
 
         else:
-            n_features = len(self.feature_labels)
-
             if src_dtype is None:
                 src_dtype = sample.dtype
 
@@ -284,20 +379,24 @@ class Container:
                 raise ValueError("Cannot cast src_dtype to self.data.dtype")
 
             values = np.asarray(sample, dtype=self.data.dtype)
-
             if values.ndim == 1:
                 values = values.reshape(1, -1)
             elif values.ndim != 2:
                 raise ValueError(f"sample ndarray must be 1D or 2D, got {values.shape}")
 
             if src_labels is not None:
-                src_labels = tuple(str(x) for x in src_labels)
-                dst_labels = tuple(str(x) for x in self.feature_labels)
-                if src_labels != dst_labels:
-                    take_idx = self._get_feature_take_indices(src_labels, dst_labels)
-                    values = np.take(values, take_idx, axis=1)
-            elif values.shape[1] != n_features:
-                    raise ValueError(f"sample must have {n_features} features, got {values.shape[1]}")
+                values = self._align_values_for_push(
+                    values,
+                    tuple(str(x) for x in src_labels),
+                    extend_labels=extend_labels,
+                    allow_missing=allow_missing,
+                    fill_value=fill_value,
+                )
+            else:
+                if values.shape[1] != len(self.feature_labels):
+                    raise ValueError(
+                        f"sample must have {len(self.feature_labels)} features, got {values.shape[1]}"
+                    )
 
             if timestamps is None:
                 raise ValueError("timestamps ndarray is required when sample is ndarray")
@@ -317,7 +416,6 @@ class Container:
 
         slots = self._resolve_slots_to_write(n_rows)
         written_slots = self._write_slot(slots, values, ts)
-
         return int(written_slots[0]) if written_slots.size == 1 else written_slots
     
     def push_from_msg(self, msg: ContainerMsg):
@@ -505,7 +603,7 @@ class Container:
         max_rows = 10
         shown_slots = ordered_slots[:max_rows]
 
-        columns = ["buffer_index", "slot", "timestamp", *labels]
+        columns = ["buffer_index", "timestamp", *labels]
         rows: list[list[str]] = []
 
         values = self._feature_cache[shown_slots]
@@ -515,12 +613,11 @@ class Container:
         for i, slot in enumerate(shown_slots):
             row = [
                 str(int(bi[i])),
-                str(int(slot)),
-                f"{float(ts[i]):.6g}",
+                f"{float(ts[i]):.4g}",
             ]
             for v in values[i]:
                 if isinstance(v, (np.floating, float)):
-                    row.append(f"{float(v):.6g}")
+                    row.append(f"{float(v):.4g}")
                 else:
                     row.append(str(v))
             rows.append(row)
@@ -689,7 +786,6 @@ class MultiContainer:
         src_labels: tuple[str, ...],
         dst_labels: tuple[str, ...],
     ) -> np.ndarray:
-        """Reuse Container's feature indexing logic."""
         cache_key = (src_labels, dst_labels)
         cached = self._feature_index_cache.get(cache_key)
         if cached is not None:

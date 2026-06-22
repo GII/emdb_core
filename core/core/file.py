@@ -83,10 +83,9 @@ class FileGoodness(File):
     def write(self):
         """Write statistics data."""
         reward_list = self.node.current_episode.reward_list
-        active_goals = self.node.active_goals
         if reward_list is None:
             return
-        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(reward_list.items()) if goal in active_goals}
+        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(reward_list.items())}
         current_world = self.node.current_world if self.node.current_world else "None"
         self._write_file(
             str(self.node.iteration)
@@ -341,11 +340,11 @@ class FileNeighborsFull(File):
 
 class FileEpisodesDataset(File):
     """A file that records the episodes published"""
-    def __init__(self, **kwargs):
+    def __init__(self, max_size=10000, **kwargs):
         super().__init__(**kwargs)
-        self.episodic_buffer = EpisodicBuffer(self.node, main_size=None, secondary_size=0, inputs=["old_perception", "action",
+        self.episodic_buffer = EpisodicBuffer(self.node, main_size=max_size, secondary_size=0, inputs=["old_perception", "action",
                                                                                                     "parent_policy", 
-                                                                                                    "perception", "rewards"])
+                                                                                                    "perception", "rewards"], flexible_labels=True)
         self.semaphore = threading.Semaphore()
 
     def write_episode(self, msg):
