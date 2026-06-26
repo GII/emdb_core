@@ -2,15 +2,16 @@ import yaml
 import inspect
 import numpy
 from rclpy.node import Node
-from rclpy import spin_until_future_complete
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
 
-from core.service_client import ServiceClient, ServiceClientAsync
+from core.service_client import ServiceClientAsync
+from core.container import Container
+
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
 from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
 from cognitive_node_interfaces.msg import Activation, MetacognitiveParameters
-from core.utils import perception_msg_to_dict
+
 
 class CognitiveNode(Node):
     """
@@ -35,8 +36,6 @@ class CognitiveNode(Node):
         _, _, node_type = self.class_name.rpartition(".")
         self.node_type = node_type
 
-        self.perception = None
-
         self.neighbors = [] # List of dics, like [{"name": "pnode1", "node_type": "PNode"}, {"name": "cnode1", "node_type": "CNode"}]
 
         #List that contains subscribers of the activation of the node's neighbors
@@ -46,9 +45,6 @@ class CognitiveNode(Node):
         self.activation.metacognitive_params = MetacognitiveParameters()
         self.activation.node_name=self.name
         self.activation.node_type=self.node_type
-
-        self.perception = []
-        self.threshold = 0.0
         self.hyperparameters = {}  # Store hyperparameters received
 
         for key, value in params.items():
@@ -180,10 +176,7 @@ class CognitiveNode(Node):
         """
         self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
 
-        # Update hyperparameters before saving
-        self._update_activation_hyperparameters()
-
-        data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors, 'hyperparameters': self.hyperparameters})
+        data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors})
 
         ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
         await ltm_response
@@ -236,11 +229,7 @@ class CognitiveNode(Node):
         :param activation_list: Dictionary with the activation of multiple nodes. 
         :type activation_list: dict
         """        
-        # Weight each neighbor activation by its provided confidence (default 1.0)
-        node_activations = [
-            float(activation_list[node_name]['data'].activation) * float(activation_list[node_name].get('confidence', 1.0))
-            for node_name in activation_list
-        ]
+        node_activations = [activation_list[node_name]['data'].activation for node_name in activation_list]
         timestamp, _ = self.extract_oldest_timestamp(activation_list)
         if len(node_activations)!=0:
             activation=numpy.prod(node_activations)
@@ -346,14 +335,13 @@ class CognitiveNode(Node):
         :rtype: cognitive_node_interfaces.srv.GetActivation.Response
         """
         self.get_logger().debug('Getting node activation...')
-        perception = perception_msg_to_dict(request.perception)
+        perception = Container.from_msg(request.perception)
         if inspect.iscoroutinefunction(self.calculate_activation):
-            await self.calculate_activation(perception)
+            activation = await self.calculate_activation(perception)
         else:
-            self.calculate_activation(perception)
-        response.activation = float(self.activation.activation)
+            activation = self.calculate_activation(perception)
+        response.activation = activation
         return response
-    
     
     async def get_confidence_callback(self, request, response):
         """
@@ -368,14 +356,13 @@ class CognitiveNode(Node):
         :rtype: cognitive_node_interfaces.srv.GetConfidence.Response
         """
         self.get_logger().debug('Getting node confidence...')
-        perception = perception_msg_to_dict(request.perception)
         if inspect.iscoroutinefunction(self.calculate_confidence):
-            await self.calculate_confidence(perception)
+            await self.calculate_confidence()
         else:
-            self.calculate_confidence(perception)
+            self.calculate_confidence()
         response.confidence = float(self.confidence)
         return response
-    
+
 
     def get_information_callback(self, request, response):
         """
@@ -573,53 +560,7 @@ class CognitiveNode(Node):
             name=name, class_name=class_name, parameters=params_str
         )
         return response
-    
 
-
-    def _yaml_safe_value(self, value):
-        """
-        Convert a value into a YAML-safe representation without recursing into
-        arbitrary ROS object graphs.
-        """
-        if value is None or isinstance(value, (str, int, float, bool)):
-            return value
-
-        if isinstance(value, numpy.generic):
-            return value.item()
-
-        if isinstance(value, numpy.ndarray):
-            return value.tolist()
-
-        if isinstance(value, Time):
-            return value.nanoseconds
-
-        if isinstance(value, dict):
-            return {
-                str(key): self._yaml_safe_value(item)
-                for key, item in value.items()
-                if not str(key).startswith('_')
-            }
-
-        if isinstance(value, (list, tuple, set)):
-            return [self._yaml_safe_value(item) for item in value]
-
-        activation_type = type(self.activation)
-        if isinstance(value, activation_type):
-            return {
-                'node_name': value.node_name,
-                'node_type': value.node_type,
-                'activation': float(value.activation),
-                'timestamp': Time.from_msg(value.timestamp).nanoseconds,
-            }
-
-        if hasattr(value, 'name') and hasattr(value, 'node_type') and hasattr(value, 'activation'):
-            return {
-                'name': str(value.name),
-                'node_type': str(value.node_type),
-                'activation': self._yaml_safe_value(getattr(value, 'activation')),
-            }
-
-        return str(value)
 
     def __str__(self):
         """
@@ -628,31 +569,8 @@ class CognitiveNode(Node):
         :return: YAML representation of the node's data.
         :rtype: str
         """
-        data = {}
-        excluded_keys = {
-            'activation_inputs',
-            'activation_publish_timer',
-            'add_neighbor_service',
-            'add_node_to_LTM_client',
-            'add_point_service',
-            'add_points_service',
-            'cbgroup_activation',
-            'cbgroup_client',
-            'cbgroup_server',
-            'contains_space_service',
-            'delete_neighbor_service',
-            'delete_node_client',
-            'history',
-            'node_clients',
-            'publish_activation_topic',
-            'save_model_service',
-            'send_pnode_space_service',
-            'spaces',
-        }
-        for key, value in self.get_data().items():
-            if key not in excluded_keys:
-                data[key] = self._yaml_safe_value(value)
-        return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+        data = self.get_data()
+        return yaml.dump(data, default_flow_style=False)
 
 def main(args=None):
     pass

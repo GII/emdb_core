@@ -4,23 +4,27 @@ import yaml
 import threading
 
 from core.service_client import ServiceClient
+from core.container import Container
+from cognitive_nodes.episodic_buffer import EpisodicBuffer
+from cognitive_nodes.episode import container_msg_to_episode
+
+
 from cognitive_node_interfaces.msg import Activation
 from cognitive_node_interfaces.srv import SendSpace, SaveModel
 from cognitive_node_interfaces.msg import SuccessRate
 from core_interfaces.srv import GetNodeFromLTM
-from core.utils import perception_msg_to_dict, separate_perceptions
-from cognitive_nodes.episodic_buffer import EpisodicBuffer
-from cognitive_nodes.episode import episode_msg_to_obj
 
 class File():
     """A MDB file."""
 
-    def __init__(self, ident, file_name, node, **params):
+    def __init__(self, ident, file_name, node, flush_freq=0, **params):
         """Init attributes when a new object is created."""
         self.ident = ident
         self.file_name = file_name
         self.file_object = None
         self.node = node
+        self.write_count = 0
+        self.flush_freq = flush_freq
 
     def __getstate__(self):
         """
@@ -61,7 +65,10 @@ class File():
         """Write data to the file."""
         if self.file_object:
             self.file_object.write(data)
-            self.file_object.flush()
+            self.write_count += 1
+            if self.flush_freq > 0 and self.write_count % self.flush_freq == 0:
+                self.file_object.flush()
+
 
 class FileGoodness(File):
     """A file where several goodness statistics about an experiment are stored."""
@@ -75,7 +82,10 @@ class FileGoodness(File):
 
     def write(self):
         """Write statistics data."""
-        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(self.node.current_episode.reward_list.items())}
+        reward_list = self.node.current_episode.reward_list
+        if reward_list is None:
+            return
+        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(reward_list.items())}
         current_world = self.node.current_world if self.node.current_world else "None"
         self._write_file(
             str(self.node.iteration)
@@ -140,7 +150,55 @@ class FileTrialsSuccess(File):
             self.file_object.flush()
         self.node.trials_data = []
 
-class FilePNodesContent(File):
+class FileSpaceContent(File):
+    def __init__(self, ident, file_name, node, **params):
+        super().__init__(ident, file_name, node, **params)
+
+    def write_header(self):
+        """Write the header of the file."""
+        super().write_header()
+        self.file_object.write("Iteration\tIdent\t")
+        self.header_finished = False
+        self.created_clients = {}
+
+    def _write_space_content(self, space: Container, ident=""):
+        labels = space.feature_labels if space else []
+
+        if labels:
+            if not self.header_finished:
+                self.finish_header(labels)
+            
+            if labels == self.labels:
+                data = space.read()
+                samples = len(space)
+                for i in range(samples):
+                    self._write_file(str(self.node.iteration) + "\t")
+                    self._write_file(ident + "\t")
+                    for idx, label in enumerate(labels):
+                        ending = "\n" if idx == len(labels) - 1 else "\t"
+                        self._write_file(
+                            str(data.sel(features=label, sample=i).values) + ending
+                        )
+
+            else:
+                self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN SPACES\n")
+
+    def finish_header(self, labels):
+        """
+        Write space dimensions in the header of the file.
+
+        :param labels: Dimensions of the space.
+        :type labels: list
+        """
+        for idx, label in enumerate(labels):
+            ending = "\n" if idx == len(labels) - 1 else "\t"
+            self.file_object.write(f"{label}{ending}")
+        self.header_finished = True
+        self.labels = labels
+
+    
+
+class FilePNodesContent(FileSpaceContent):
     """A file that saves the contents of the P-nodes."""   
     def __init__(self, ident, file_name, node, save_interval=100, **params):
         super().__init__(ident, file_name, node, **params)
@@ -164,22 +222,9 @@ class FilePNodesContent(File):
             pnode_client = ServiceClient(SendSpace, 'pnode/' + str(pnode_name) + '/send_space')
             self.created_clients[pnode_name] = pnode_client
 
-    def finish_header(self, labels):
-        """
-        Write P-Node dimensions in the header of the file.
-
-        :param labels: Dimensions of the P-Node.
-        :type labels: list
-        """
-        for label in labels:
-            self.file_object.write(f"{label}\t")
-        self.file_object.write("Confidence\n")
-        self.header_finished = True
-        self.labels = labels
-
     def write(self):
         """Writes P-Nodes contents."""    
-        write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)    
+        write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
         if "PNode" in self.node.LTM_cache and write_needed:
             for pnode in self.node.LTM_cache["PNode"]:
                 if pnode not in self.created_clients:
@@ -187,29 +232,11 @@ class FilePNodesContent(File):
 
                 if self.created_clients[pnode]:
                     response = self.created_clients[pnode].send_request()
+                    space = Container.from_msg(response.space)
+                    if space:
+                        self._write_space_content(space, ident=pnode)
 
-                    labels = response.labels
 
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
-
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iteration) + "\t")
-                                self._write_file(pnode + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN PNODES\n")
 
 class FileLastIterationPNodesContent(FilePNodesContent):
     """A file that saves the contents of the P-nodes at the end of an experiment."""
@@ -221,44 +248,17 @@ class FileLastIterationPNodesContent(FilePNodesContent):
 
                 if self.created_clients[pnode]:
                     response = self.created_clients[pnode].send_request()
-
-                    labels = response.labels
-
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
-
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iterations) + "\t")
-                                self._write_file(pnode + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN PNODES.\n")
+                    space = Container.from_msg(response.space)
+                    if space:
+                        self._write_space_content(space, ident=pnode)
 
                     
         
-class FileGoalsContent(File):
+class FileGoalsContent(FileSpaceContent):
     """A file that saves the contents of the Goals at the end of an experiment."""
     def __init__(self, ident, file_name, node, save_interval=100, **params):
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
-
-    def write_header(self):
-        """Write the header of the file."""
-        super().write_header()
-        self.file_object.write("Iteration\tIdent\t")
-        self.header_finished = False
-        self.created_clients = {}
 
     def create_goal_client(self, goal_name):
         """
@@ -271,18 +271,6 @@ class FileGoalsContent(File):
             goal_client = ServiceClient(SendSpace, 'goal/' + str(goal_name) + '/send_space')
             self.created_clients[goal_name] = goal_client
 
-    def finish_header(self, labels):
-        """
-        Write Goals dimensions in the header of the file.
-
-        :param labels: Dimensions of the Goal.
-        :type labels: list
-        """
-        for label in labels:
-            self.file_object.write(f"{label}\t")
-        self.file_object.write("Confidence\n")
-        self.header_finished = True
-        self.labels = labels
 
     def write(self):
         """Writes Goals contents.""" 
@@ -292,29 +280,9 @@ class FileGoalsContent(File):
                     self.create_goal_client(goal)
                 if self.created_clients[goal]:
                     response = self.created_clients[goal].send_request()
-                    self.node.get_logger().info(f"Writing data for goal {goal}. Points: {len(response.confidences)}")
-                    labels = response.labels
-
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
-
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iteration) + "\t")
-                                self._write_file(goal + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN GOALS\n")
+                    space = Container.from_msg(response.space)
+                    if space:
+                        self._write_space_content(space, ident=goal)
     
 
 class FileLastIterationGoalsContent(FileGoalsContent):
@@ -326,31 +294,10 @@ class FileLastIterationGoalsContent(FileGoalsContent):
                 self.create_goal_client(goal)
                 if self.created_clients[goal]:
                     response = self.created_clients[goal].send_request()
-                    labels = response.labels
+                    space = Container.from_msg(response.space)
+                    if space:
+                        self._write_space_content(space, ident=goal)
 
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
-
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iterations) + "\t")
-                                self._write_file(goal + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN GOALS.\n")
-
-                    else:
-                        self.created_clients[goal] = None
 
 class FileNeighbors(File):
     """A file that saves the neighbors of each node (Method specific to track the subgoals created by effectance)."""    
@@ -393,16 +340,16 @@ class FileNeighborsFull(File):
 
 class FileEpisodesDataset(File):
     """A file that records the episodes published"""
-    def __init__(self, **kwargs):
+    def __init__(self, max_size=10000, **kwargs):
         super().__init__(**kwargs)
-        self.episodic_buffer = EpisodicBuffer(self.node, main_size=None, secondary_size=0, inputs=["old_perception", "action",
+        self.episodic_buffer = EpisodicBuffer(self.node, main_size=max_size, secondary_size=0, inputs=["old_perception", "action",
                                                                                                     "parent_policy", 
-                                                                                                    "perception", "reward_list"])
+                                                                                                    "perception", "rewards"], flexible_labels=True)
         self.semaphore = threading.Semaphore()
 
     def write_episode(self, msg):
         self.semaphore.acquire()
-        episode = episode_msg_to_obj(msg)
+        episode = container_msg_to_episode(msg)
         self.node.get_logger().debug(f"Received episode to write: {episode}")
         self.episodic_buffer.add_episode(episode)
         self.node.get_logger().debug(f"Episodic buffer size: {self.episodic_buffer.main_size}")

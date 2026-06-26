@@ -1,6 +1,8 @@
 from cognitive_nodes.pnode import PNode
 import random
 
+from core_interfaces.msg import Container as ContainerMsg
+
 class DummyPNode(PNode):
     """
     Activated Dummy PNode class
@@ -19,10 +21,7 @@ class DummyPNode(PNode):
             In this case it is empty.
         :rtype: cognitive_node_interfaces.srv.SendGoalSpace.Response
         """     
-        response.labels = []
-        response.data = []
-        response.confidences = []
-
+        response.space = ContainerMsg()  # Return an empty space
         return response
 
     def calculate_activation(self, perception=None, activation_list=None):

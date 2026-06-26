@@ -38,6 +38,7 @@ class CommanderNode(Node):
         self.last_id = 0
         self.executors = {} #Dictionary with executors: {id: <multiprocessing.Process>, ...}]
         self.nodes = {}
+        self.protected_executors = [] #List of executors that are exclusive to a node and cannot be used for load balancing
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.node_clients={}
@@ -595,6 +596,7 @@ class CommanderNode(Node):
                         new_threads = node.get('threads', 1)
                         if new_ex:
                             ex=self.add_execution_node(new_threads)
+                            self.protected_executors.append(ex)
                         else:
                             ex = self.get_lowest_load_executor()
                         
@@ -622,6 +624,7 @@ class CommanderNode(Node):
                 new_threads = experiment_data.get('threads', 1)
                 if new_ex:
                     ex=self.add_execution_node(new_threads)
+                    self.protected_executors.append(ex)
                 else:
                     ex = self.get_lowest_load_executor()
 
@@ -719,9 +722,9 @@ class CommanderNode(Node):
         :rtype: int
         """
 
-        ex = random.choice(list(self.executors.keys()))
-
-        
+        #ex = random.choice(list(self.executors.keys()))
+        balancing_nodes = {ex: len(self.nodes[ex]) for ex in self.executors if ex not in self.protected_executors}
+        ex = min(balancing_nodes, key=balancing_nodes.get)
         self.get_logger().info('Lowest load executor: ' + str(ex))
         return ex
     
