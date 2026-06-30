@@ -332,6 +332,63 @@ class FileLastIterationGoalsContent(FileGoalsContent):
                     else:
                         self.created_clients[goal] = None
 
+
+class FileCNodesContent(File):
+    """A file that saves C-Node content from the LTM cache."""
+
+    def write_header(self):
+        """Write the header of the file."""
+        super().write_header()
+        self.file_object.write("Iteration\tIdent\tWorldModel\tPNode\tGoal\tPolicy\tNeighbors\n")
+        self.ite = 100  # Iterations between writings #TODO Vary iterations
+
+    def _neighbor_by_type(self, neighbors, node_type):
+        for neighbor in neighbors:
+            if neighbor.get("node_type") == node_type:
+                return neighbor.get("name", "")
+        return ""
+
+    def _write_cnodes(self, iteration_value):
+        for cnode, cnode_data in self.node.LTM_cache["CNode"].items():
+            neighbors = cnode_data.get("neighbors", [])
+            world_model = self._neighbor_by_type(neighbors, "WorldModel")
+            pnode = self._neighbor_by_type(neighbors, "PNode")
+            goal = self._neighbor_by_type(neighbors, "Goal")
+            policy = self._neighbor_by_type(neighbors, "Policy")
+            neighbor_names = [neighbor.get("name", "") for neighbor in neighbors]
+
+            self.file_object.write(
+                str(iteration_value)
+                + "\t"
+                + str(cnode)
+                + "\t"
+                + str(world_model)
+                + "\t"
+                + str(pnode)
+                + "\t"
+                + str(goal)
+                + "\t"
+                + str(policy)
+                + "\t"
+                + str(neighbor_names)
+                + "\n"
+            )
+
+    def write(self):
+        """Writes C-Nodes contents."""
+        if "CNode" in self.node.LTM_cache and self.node.iteration % 100 == 0:  # TODO Vary iterations
+            self._write_cnodes(self.ite)
+            self.ite = self.ite + 100  # TODO Vary iterations
+
+
+class FileLastIterationCNodesContent(FileCNodesContent):
+    """A file that saves C-Node content at the end of an experiment."""
+
+    def write(self):
+        """Writes C-Nodes contents."""
+        if "CNode" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
+            self._write_cnodes(self.node.iterations)
+
 class FileNeighbors(File):
     """A file that saves the neighbors of each node (Method specific to track the subgoals created by effectance)."""    
     def write_header(self):
