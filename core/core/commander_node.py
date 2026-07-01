@@ -746,7 +746,7 @@ class CommanderNode(Node):
         """
         for executor_id, cognitive_nodes in self.nodes.items():
             if name in cognitive_nodes:
-                return executor_id
+                return str(executor_id)
         return None
     
     def node_exists(self, name):
@@ -772,6 +772,9 @@ class CommanderNode(Node):
         :param node_name: The name of the node.
         :type node_name: str
         """
+        executor_id = str(executor_id)
+        if executor_id not in self.nodes:
+            self.nodes[executor_id] = []
         self.nodes[executor_id].append(node_name)
 
     def remove_node_from_executor(self, executor_id, node_name):
@@ -783,6 +786,7 @@ class CommanderNode(Node):
         :param node_name: The name of the node to remove.
         :type node_name: str
         """
+        executor_id = str(executor_id)
         self.nodes[executor_id].remove(node_name)
 
     def send_create_request_to_executor(self, executor_id, name, class_name, parameters):
