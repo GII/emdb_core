@@ -1,7 +1,7 @@
 import os
 import rclpy
 import yaml
-import random
+import numpy
 import multiprocessing as mp
 
 from rclpy.node import Node
@@ -11,6 +11,7 @@ from core.config import saved_data_dir
 from std_msgs.msg import String
 from core.service_client import ServiceClient
 from core.execution_node import create_execution_node
+from core.utils import resolve_seed
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
@@ -40,7 +41,17 @@ class CommanderNode(Node):
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.node_clients={}
-        self.random_seed = self.declare_parameter('random_seed', value = 0).get_parameter_value().integer_value
+        # Resolve the seed once at the top of the architecture: a value of 0
+        # (the default) means "no seed requested" and yields a fresh time-based
+        # seed, so the run is genuinely random. The resolved, concrete seed is
+        # logged and injected into every node, making the whole architecture
+        # share one coherent (and reproducible-if-noted) seed.
+        requested_seed = self.declare_parameter('random_seed', value=0).get_parameter_value().integer_value
+        self.random_seed = resolve_seed(requested_seed)
+        self.get_logger().info(f"Using random seed {self.random_seed} (requested: {requested_seed})")
+        # Seeded generator for the commander's own stochastic decisions (e.g.
+        # executor assignment), so node placement is reproducible too.
+        self.rng = numpy.random.default_rng(self.random_seed)
 
             
         # Add Execution Node Service for the Execution Nodes
@@ -571,9 +582,14 @@ class CommanderNode(Node):
                     name = node['name']
                     class_name = node['class_name']
                     if node.get('parameters'):
-                        parameters = str(node['parameters'])
+                        params_dict = dict(node['parameters'])
                     else:
-                        parameters = ''
+                        params_dict = {}
+                    # Inject the global seed so every initial LTM node is
+                    # reproducible. An explicit per-node random_seed in the YAML
+                    # takes precedence.
+                    params_dict.setdefault('random_seed', self.random_seed)
+                    parameters = str(params_dict)
                     self.get_logger().info(f"Loading {class_name} {name}...")
 
                     if self.node_exists(name):
@@ -713,7 +729,7 @@ class CommanderNode(Node):
         :rtype: int
         """
 
-        ex = random.choice(list(self.executors.keys()))
+        ex = int(self.rng.choice(list(self.executors.keys())))
 
         
         self.get_logger().info('Lowest load executor: ' + str(ex))
