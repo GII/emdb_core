@@ -149,7 +149,7 @@ class ExecutionNode(Node):
         self.get_logger().info(f'Creating new {class_name} {name}...')
 
         try:
-            new_node = class_from_classname(class_name)(name, **parameters)
+            new_node = class_from_classname(class_name)(name, class_name=class_name, **parameters)
         except Exception as e:
             self.get_logger().error(f"Unhandled exception: {e}\n{traceback.format_exc()}")
             response.created = False

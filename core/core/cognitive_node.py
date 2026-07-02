@@ -21,7 +21,7 @@ class CognitiveNode(Node):
     common functionality for cognitive nodes.
     """
 
-    def __init__(self, name, class_name, **params):
+    def __init__(self, name, class_name, node_type=None, **params):
         """
         Initialize a CognitiveNode.
 
@@ -29,11 +29,14 @@ class CognitiveNode(Node):
         :type name: str
         :param class_name: The name of the class, e.g., 'cognitive_nodes.perception.Perception'.
         :type class_name: str
+        :param node_type: The type of the node.
+        :type node_type: str
         """
         super().__init__(name)
         self.name = name
         self.class_name = class_name
-        _, _, node_type = self.class_name.rpartition(".")
+        if node_type is None:
+            raise ValueError("node_type must be provided")
         self.node_type = node_type
 
         self.neighbors = [] # List of dics, like [{"name": "pnode1", "node_type": "PNode"}, {"name": "cnode1", "node_type": "CNode"}]
