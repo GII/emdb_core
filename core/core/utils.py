@@ -1,8 +1,29 @@
 import importlib
 import math
+import time
 import numpy as np
 from cognitive_node_interfaces.msg import Perception, Actuation, ObjectParameters
 from enum import Enum
+
+
+def resolve_seed(seed):
+    """
+    Resolve a random number generator seed, never applying a fixed default.
+
+    A falsy seed (``None`` or ``0``) means "no seed was requested": in that case
+    a fresh, non-deterministic seed is derived from the current time
+    (``time.time_ns()``) so that each run is genuinely random. The generated
+    value is returned (not just applied) so callers can log it and reproduce the
+    run later by passing it back explicitly. Any non-zero value is used as-is.
+
+    :param seed: The requested seed. ``None`` or ``0`` request a random run.
+    :type seed: int or None
+    :return: A concrete, non-zero integer seed in ``[1, 2**32 - 1]``.
+    :rtype: int
+    """
+    if not seed:
+        return int(time.time_ns() % (2 ** 32 - 1)) + 1
+    return int(seed)
 
 def class_from_classname(class_name):
     """

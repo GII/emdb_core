@@ -12,6 +12,7 @@ from core.config import saved_data_dir
 from std_msgs.msg import String
 from core.service_client import ServiceClient
 from core.execution_node import create_execution_node
+from core.utils import resolve_seed
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
@@ -42,7 +43,14 @@ class CommanderNode(Node):
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.node_clients={}
-        self.random_seed = self.declare_parameter('random_seed', value = 0).get_parameter_value().integer_value
+        # Resolve the seed once at the top of the architecture: value 0 (the
+        # default) means "no seed requested" and yields a fresh time-based seed,
+        # so the run is genuinely random. The resolved, concrete seed is logged
+        # and injected into every node through global_params, so the whole
+        # architecture shares one coherent (and reproducible-if-noted) seed.
+        requested_seed = self.declare_parameter('random_seed', value = 0).get_parameter_value().integer_value
+        self.random_seed = resolve_seed(requested_seed)
+        self.get_logger().info(f"Using random seed {self.random_seed} (requested: {requested_seed})")
         self.global_params = {"random_seed": self.random_seed}
 
             
