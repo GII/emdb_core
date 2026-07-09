@@ -303,6 +303,21 @@ class CognitiveNode(Node):
         # Base cognitive node does not implement any specific processing of metacognitive parameters.
         pass
 
+    def read_metacognitive_parameters(self, activation_msg: Activation):
+        """
+        Read metacognitive parameters from an activation message.
+
+        :param activation_msg: Activation message containing metacognitive parameters.
+        :type activation_msg: Activation
+        :return: Dictionary with metacognitive parameters.
+        :rtype: dict
+        """
+        params = {}
+        for name, value in zip(activation_msg.metacognitive_params.parameter_names,
+                               activation_msg.metacognitive_params.parameter_values):
+            params[name] = value
+        return params
+
     def add_neighbor_callback(self, request, response):
         """
         Add a neighbor to the nodes neighbors collection.
