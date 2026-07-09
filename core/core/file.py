@@ -204,13 +204,6 @@ class FilePNodesContent(FileSpaceContent):
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
 
-    def write_header(self):
-        """Write the header of the file."""
-        super().write_header()
-        self.file_object.write("Iteration\tIdent\t")
-        self.header_finished = False
-        self.created_clients = {}
-
     def create_pnode_client(self, pnode_name):
         """
         Create client to request P-Node's space.
