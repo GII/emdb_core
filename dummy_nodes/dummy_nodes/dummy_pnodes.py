@@ -1,5 +1,5 @@
 from cognitive_nodes.pnode import PNode
-import random
+from cognitive_nodes.random_utils import get_rng
 
 from core_interfaces.msg import Container as ContainerMsg
 
@@ -98,6 +98,8 @@ class RandomDummyPNode(DummyPNode):
         :return: A msg with the activation of the P-Node and its timestamp.
         :rtype: cognitive_node_interfaces.msg.Activation
         """
-        self.activation.activation = random.random()
+        if not hasattr(self, "rng"):
+            self.rng = get_rng(getattr(self, "random_seed", None))
+        self.activation.activation = float(self.rng.random())
         self.activation.timestamp = self.get_clock().now().to_msg()
         return self.activation
