@@ -1,7 +1,8 @@
 import os
 import rclpy
 import yaml
-import numpy
+import random
+import traceback
 import multiprocessing as mp
 
 from rclpy.node import Node
@@ -38,20 +39,19 @@ class CommanderNode(Node):
         self.last_id = 0
         self.executors = {} #Dictionary with executors: {id: <multiprocessing.Process>, ...}]
         self.nodes = {}
+        self.protected_executors = [] #List of executors that are exclusive to a node and cannot be used for load balancing
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
         self.node_clients={}
-        # Resolve the seed once at the top of the architecture: a value of 0
-        # (the default) means "no seed requested" and yields a fresh time-based
-        # seed, so the run is genuinely random. The resolved, concrete seed is
-        # logged and injected into every node, making the whole architecture
-        # share one coherent (and reproducible-if-noted) seed.
-        requested_seed = self.declare_parameter('random_seed', value=0).get_parameter_value().integer_value
+        # Resolve the seed once at the top of the architecture: value 0 (the
+        # default) means "no seed requested" and yields a fresh time-based seed,
+        # so the run is genuinely random. The resolved, concrete seed is logged
+        # and injected into every node through global_params, so the whole
+        # architecture shares one coherent (and reproducible-if-noted) seed.
+        requested_seed = self.declare_parameter('random_seed', value = 0).get_parameter_value().integer_value
         self.random_seed = resolve_seed(requested_seed)
         self.get_logger().info(f"Using random seed {self.random_seed} (requested: {requested_seed})")
-        # Seeded generator for the commander's own stochastic decisions (e.g.
-        # executor assignment), so node placement is reproducible too.
-        self.rng = numpy.random.default_rng(self.random_seed)
+        self.global_params = {"random_seed": self.random_seed}
 
             
         # Add Execution Node Service for the Execution Nodes
@@ -374,7 +374,12 @@ class CommanderNode(Node):
         """
         name = str(request.name)
         class_name = str(request.class_name)
-        parameters = str(request.parameters)
+        yaml_parameters = str(request.parameters)
+        parameters={}
+        if yaml_parameters:
+            parameters = yaml.safe_load(yaml_parameters)
+        parameters.update(self.global_params)
+        yaml_parameters = yaml.dump(parameters)
 
         self.get_logger().info(f'Creating new {class_name} {name}...')
         
@@ -386,7 +391,7 @@ class CommanderNode(Node):
            
             ex = self.get_lowest_load_executor()
             
-            executor_response = self.send_create_request_to_executor(ex, name, class_name, parameters)
+            executor_response = self.send_create_request_to_executor(ex, name, class_name, yaml_parameters)
             
             self.register_node(ex, name)
             
@@ -576,20 +581,19 @@ class CommanderNode(Node):
             self.get_logger().info(f'Loading file {experiment_file}')
 
             nodes = data['LTM']['Nodes']
-            
+            self.global_params["globals"] = data['LTM'].get("Globals", {})
+            if data.get('Control'):
+                self.global_params['Control'] = data['Control']
+            if data['LTM'].get('Connectors'):
+                self.global_params['Connectors'] = data['LTM']['Connectors']
             for class_name, node_list in nodes.items():
                 for node in node_list:
                     name = node['name']
                     class_name = node['class_name']
                     if node.get('parameters'):
-                        params_dict = dict(node['parameters'])
+                        parameters = str({**node['parameters'], **self.global_params})
                     else:
-                        params_dict = {}
-                    # Inject the global seed so every initial LTM node is
-                    # reproducible. An explicit per-node random_seed in the YAML
-                    # takes precedence.
-                    params_dict.setdefault('random_seed', self.random_seed)
-                    parameters = str(params_dict)
+                        parameters = str(self.global_params)
                     self.get_logger().info(f"Loading {class_name} {name}...")
 
                     if self.node_exists(name):
@@ -597,9 +601,10 @@ class CommanderNode(Node):
 
                     else:
                         new_ex = node.get('new_executor', False)
-                        new_threads = node.get('thread', 1)
+                        new_threads = node.get('threads', 1)
                         if new_ex:
                             ex=self.add_execution_node(new_threads)
+                            self.protected_executors.append(ex)
                         else:
                             ex = self.get_lowest_load_executor()
                         
@@ -619,19 +624,15 @@ class CommanderNode(Node):
                     params_dict['LTM_id']='ltm_0' #TODO Handle multiple LTMs
                     if data['LTM'].get('Files'):
                         params_dict['Files']=data['LTM']['Files']
-                    if data['LTM'].get('Connectors'):
-                        params_dict['Connectors']=data['LTM']['Connectors']
-                    if data.get('Control'):
-                        params_dict['Control']=data['Control']
-                    params_dict['random_seed']=self.random_seed
-                    parameters=str(params_dict)
+                    parameters=str({**params_dict, **self.global_params})
 
                 self.get_logger().info(f"Loading {class_name} {name}...")
 
                 new_ex = experiment_data.get('new_executor', False)
-                new_threads = experiment_data.get('thread', 1)
+                new_threads = experiment_data.get('threads', 1)
                 if new_ex:
                     ex=self.add_execution_node(new_threads)
+                    self.protected_executors.append(ex)
                 else:
                     ex = self.get_lowest_load_executor()
 
@@ -729,9 +730,8 @@ class CommanderNode(Node):
         :rtype: int
         """
 
-        ex = int(self.rng.choice(list(self.executors.keys())))
-
-        
+        balancing_nodes = {ex: len(self.nodes[ex]) for ex in self.executors if ex not in self.protected_executors}
+        ex = min(balancing_nodes, key=balancing_nodes.get)
         self.get_logger().info('Lowest load executor: ' + str(ex))
         return ex
     
@@ -965,6 +965,10 @@ def main(args=None):
     except KeyboardInterrupt:
         print('Keyboard Interrupt Detected: Shutting down execution nodes...')
         commander.process_shutdown()
+    except Exception as e:
+        rclpy.logging.get_logger(f"execution_node_{id}").error(
+            f"Unhandled exception: {e}\n{traceback.format_exc()}"
+        )
     finally:
         commander.destroy_node()
 

@@ -2,15 +2,16 @@ import yaml
 import inspect
 import numpy
 from rclpy.node import Node
-from rclpy import spin_until_future_complete
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
 
-from core.service_client import ServiceClient, ServiceClientAsync
+from core.service_client import ServiceClientAsync
+from core.container import Container
+
 from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
-from cognitive_node_interfaces.srv import GetActivation, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
-from cognitive_node_interfaces.msg import Activation
-from core.utils import perception_msg_to_dict
+from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
+from cognitive_node_interfaces.msg import Activation, MetacognitiveParameters
+
 
 class CognitiveNode(Node):
     """
@@ -20,7 +21,7 @@ class CognitiveNode(Node):
     common functionality for cognitive nodes.
     """
 
-    def __init__(self, name, class_name, **params):
+    def __init__(self, name, class_name, node_type=None, **params):
         """
         Initialize a CognitiveNode.
 
@@ -28,26 +29,31 @@ class CognitiveNode(Node):
         :type name: str
         :param class_name: The name of the class, e.g., 'cognitive_nodes.perception.Perception'.
         :type class_name: str
+        :param node_type: The type of the node.
+        :type node_type: str
         """
         super().__init__(name)
         self.name = name
         self.class_name = class_name
-        _, _, node_type = self.class_name.rpartition(".")
+        if node_type is None:
+            raise ValueError("node_type must be provided")
         self.node_type = node_type
 
-        self.perception = None
-
         self.neighbors = [] # List of dics, like [{"name": "pnode1", "node_type": "PNode"}, {"name": "cnode1", "node_type": "CNode"}]
-        
+
         #List that contains subscribers of the activation of the node's neighbors
         self.activation_inputs={}
+        self.override_input = Activation() #Activation message that can be used to override the activation of the node
         self.activation_topic = True
         self.activation = Activation()
+        self.activation.metacognitive_params = MetacognitiveParameters()
         self.activation.node_name=self.name
         self.activation.node_type=self.node_type
+        self.metacognitive_params = {"confidence": 0.0}
 
-        self.perception = []
-        self.threshold = 0.0
+        # Dictionaries to store the default class and parameters for each connector type
+        self.default_class = {}
+        self.default_params = {}
 
         for key, value in params.items():
             setattr(self, key, value)
@@ -72,6 +78,13 @@ class CognitiveNode(Node):
             'cognitive_node/' + str(name) + '/get_activation',
             self.get_activation_callback, callback_group=self.cbgroup_activation
         )
+
+        # Get Confidence Service
+        self.get_confidence_service = self.create_service(
+            GetConfidence,
+            'cognitive_node/' + str(name) + '/get_confidence',
+            self.get_confidence_callback, callback_group=self.cbgroup_activation
+        )   
         
         # Get Information Service
         self.get_information_service = self.create_service(
@@ -102,14 +115,30 @@ class CognitiveNode(Node):
         )
 
         #Periodic publishing of activation
-        self.activation_publish_timer=self.create_timer(0.01, self.publish_activation_callback, callback_group=self.cbgroup_activation)
+        self.activation_publish_timer=self.create_timer(0.001, self.publish_activation_callback, callback_group=self.cbgroup_server)
+
+        # Suscription to override activation topic
+        self.override_activation_topic_subscriber = self.create_subscription(
+            Activation,
+            'cognitive_node/' + str(name) + '/override_activation',
+            self.read_override_activation_callback, 1, callback_group=self.cbgroup_activation
+        )
 
         #Service clients to add or delete nodes from the LTM
         service_name_add_LTM = 'ltm_0' + '/add_node' # TODO choose LTM ID
         self.add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name_add_LTM, self.cbgroup_client)
         service_name_delete_LTM = 'ltm_0' + '/delete_node' # TODO: choose the ltm ID
         self.delete_node_client = ServiceClientAsync(self, DeleteNodeFromLTM, service_name_delete_LTM, self.cbgroup_client)
-    
+
+    def setup_connectors(self):
+        """
+        Configures the default classes for the cognitive nodes.
+        """
+        if hasattr(self, "Connectors"):
+            for connector in self.Connectors:
+                self.default_class[connector["data"]] = connector.get("default_class")
+                self.default_params[connector["data"]] = connector.get("parameters", {})
+
     def get_data(self):
         """
         Get the data associated with the node.
@@ -139,7 +168,7 @@ class CognitiveNode(Node):
     
     async def register_in_LTM(self, data_dic):
         """
-        Requests registering the node in the LTM. 
+        Requests registering the node in the LTM.
 
         :param data_dic: A dictionary with the data to be saved.
         :type data_dic: dict
@@ -147,7 +176,7 @@ class CognitiveNode(Node):
         :rtype: rclpy.task.Future
         """
         self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
-        
+
         data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors})
 
         ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
@@ -238,7 +267,57 @@ class CognitiveNode(Node):
         self.publish_activation_topic.publish(activation)
         self.get_logger().debug("Activation for " + str(activation.node_type) + str(activation.node_name) +
                             ": " + str(activation.activation))
+        
+    def calculate_metacognitive_parameters(self):
+        """
+        Calculate the metacognitive parameters for the node.
+        This method should be implemented in the child class to provide specific calculations
+        """
+        self.get_logger().info(f'Calculating metacognitive parameters for {self.node_type} {self.name}...')
+        raise NotImplementedError
     
+    def write_metacognitive_parameters(self, activation_msg: Activation):
+        """
+        Update activation message with new metacognitive parameters.
+
+        :param activation_msg: Activation message containing metacognitive parameters.
+        :type activation_msg: Activation
+        """
+        keys = [str(key) for key in self.metacognitive_params.keys()]
+        values = [float(value) for value in self.metacognitive_params.values()]
+        activation_msg.metacognitive_params.parameter_names = keys
+        activation_msg.metacognitive_params.parameter_values = values
+
+    def process_metacognitive_parameters(self, activation_list):
+        """
+        Process the metacognitive parameters from the activation list.
+
+        This method extracts the metacognitive parameters from the activation
+        messages of neighboring nodes and performs appropriate operations. 
+
+        Must be implemented in the child class.
+
+        :param activation_list: Dictionary with the activation of multiple nodes.
+        :type activation_list: dict
+        """
+        # Base cognitive node does not implement any specific processing of metacognitive parameters.
+        pass
+
+    def read_metacognitive_parameters(self, activation_msg: Activation):
+        """
+        Read metacognitive parameters from an activation message.
+
+        :param activation_msg: Activation message containing metacognitive parameters.
+        :type activation_msg: Activation
+        :return: Dictionary with metacognitive parameters.
+        :rtype: dict
+        """
+        params = {}
+        for name, value in zip(activation_msg.metacognitive_params.parameter_names,
+                               activation_msg.metacognitive_params.parameter_values):
+            params[name] = value
+        return params
+
     def add_neighbor_callback(self, request, response):
         """
         Add a neighbor to the nodes neighbors collection.
@@ -300,13 +379,31 @@ class CognitiveNode(Node):
         :rtype: cognitive_node_interfaces.srv.GetActivation.Response
         """
         self.get_logger().debug('Getting node activation...')
-        perception = perception_msg_to_dict(request.perception)
+        perception = Container.from_msg(request.perception)
         if inspect.iscoroutinefunction(self.calculate_activation):
-            await self.calculate_activation(perception)
+            activation = await self.calculate_activation(perception)
         else:
-            self.calculate_activation(perception)
-        response.activation = float(self.activation.activation)
+            activation = self.calculate_activation(perception)
+        response.activation = activation
         return response
+    
+    async def get_confidence_callback(self, request, response):
+        """
+        Callback method to calculate and return the node's confidence.
+        This method calculates the confidence of the node based on its perception.
+
+        :param request: The request containing the perception data.
+        :type request: cognitive_node_interfaces.srv.GetConfidence.Request
+        :param response: The response that will contain the calculated confidence.
+        :type response: cognitive_node_interfaces.srv.GetConfidence.Response
+        :return: The response with the calculated confidence.
+        :rtype: cognitive_node_interfaces.srv.GetConfidence.Response
+        """
+        self.get_logger().debug('Getting node confidence...')
+        self.calculate_metacognitive_parameters()
+        response.confidence = self.metacognitive_params.get("confidence", 0.0)
+        return response
+
 
     def get_information_callback(self, request, response):
         """
@@ -356,22 +453,28 @@ class CognitiveNode(Node):
     async def publish_activation_callback(self):
         """
         Timed publish of the activation value. This method will calculate the activation based on the neighbor's activation, and then publish it in the corresponding topic.
-        """        
+        """
         if self.activation_topic:
             if len(self.activation_inputs)==0: #Calculates activation when there are no inputs configured (Support for custom nodes)
                 updated=True
             else:
                 self.get_logger().debug(f'Activation Inputs: {str(self.activation_inputs)}')
-                updated= all((self.activation_inputs[node_name]['updated'] for node_name in self.activation_inputs)) 
+                updated= all((self.activation_inputs[node_name]['updated'] for node_name in self.activation_inputs))
 
             if updated:
                 if inspect.iscoroutinefunction(self.calculate_activation):
                     await self.calculate_activation(perception=None, activation_list=self.activation_inputs)
                 else:
                     self.calculate_activation(perception=None, activation_list=self.activation_inputs)
+                self.process_metacognitive_parameters(self.activation_inputs)
                 for node_name in self.activation_inputs:
                     self.activation_inputs[node_name]['updated']=False
-            self.publish_activation(self.activation)
+                self.write_metacognitive_parameters(self.activation)
+                # The override input is used to force the activation to a certain value, if it is higher than the calculated activation.
+                if self.activation.activation<self.override_input.activation:
+                    self.activation.activation=self.override_input.activation
+                self.publish_activation(self.activation)
+
 
     def create_activation_input(self, node: dict):
         """
@@ -387,7 +490,7 @@ class CognitiveNode(Node):
                 subscriber=self.create_subscription(Activation, 'cognitive_node/' + str(name) + '/activation', self.read_activation_callback, 1, callback_group=self.cbgroup_activation)
                 data=Activation()
                 updated=False
-                new_input=dict(subscriber=subscriber, data=data, updated=updated)
+                new_input=dict(subscriber=subscriber, node_type=node_type, data=data, updated=updated)
                 self.activation_inputs[name]=new_input
                 self.get_logger().debug(f'Created new activation input: {name} of type {node_type}')
             else:
@@ -429,6 +532,21 @@ class CognitiveNode(Node):
                 self.activation_inputs[node_name]['updated']=True
             elif Time.from_msg(msg.timestamp).nanoseconds<Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds:
                 self.get_logger().warn(f'Detected jump back in time, activation of node: {node_name} ({msg.node_type})')
+
+    def read_override_activation_callback(self, msg: Activation):
+        """
+        Callback to read the override activation message.
+
+        :param msg: Activation message to override the node's activation.
+        :type msg: cognitive_node_interfaces.msg.Activation
+        """
+        if Time.from_msg(msg.timestamp).nanoseconds>Time.from_msg(self.override_input.timestamp).nanoseconds:
+            if self.override_input.node_name != msg.node_name:
+                self.get_logger().warn(f'Override activation received from a different node. Previous: {self.override_input.node_name}, New: {msg.node_name}')
+            self.override_input=msg
+            self.get_logger().debug(f'Override activation received: {self.override_input.activation} from node {self.override_input.node_name} ({self.override_input.node_type})')
+        elif Time.from_msg(msg.timestamp).nanoseconds<Time.from_msg(self.override_input.timestamp).nanoseconds:
+            self.get_logger().warn(f'Detected jump back in time, override activation of node: {msg.node_name} ({msg.node_type})')
         
     def add_neighbor_client(self, node_name, neighbor_name):
         """

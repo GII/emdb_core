@@ -2,6 +2,7 @@ import random
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.task import Future
 
 class ServiceClient(Node):
@@ -21,6 +22,8 @@ class ServiceClient(Node):
         self.client_name = service_name.replace("/", "_") + '_client_' + f"{random.randint(0, 999999):06}"
         super().__init__(self.client_name)
         self.cbgroup=MutuallyExclusiveCallbackGroup()
+        self.se = SingleThreadedExecutor()
+        self.se.add_node(self)
         self.cli = self.create_client(service_type, service_name, callback_group=self.cbgroup)
         while not self.cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info(f'Service {service_name} not available, waiting again...')
@@ -38,7 +41,7 @@ class ServiceClient(Node):
         for key, value in kwargs.items():
             setattr(self.req, key, value)
         self.future = self.cli.call_async(self.req)
-        rclpy.spin_until_future_complete(self, self.future)
+        self.se.spin_until_future_complete(self.future)
         return self.future.result()
     
 class ServiceClientAsync():

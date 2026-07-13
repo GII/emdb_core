@@ -1,6 +1,7 @@
 import importlib
 import math
 import time
+import numpy as np
 from cognitive_node_interfaces.msg import Perception, Actuation, ObjectParameters
 from enum import Enum
 
@@ -23,7 +24,6 @@ def resolve_seed(seed):
     if not seed:
         return int(time.time_ns() % (2 ** 32 - 1)) + 1
     return int(seed)
-
 
 def class_from_classname(class_name):
     """
@@ -175,38 +175,67 @@ def separate_perceptions(perception):
     :rtype: list
     """
     perceptions = []
-    for i in range(max([len(sensor) for sensor in perception.values()])):
-            perception_line = {} 
-            for sensor, value in perception.items():
-                sid = i % len(value)
-                perception_line[sensor + str(sid)] = value[sid]
-            perceptions.append(perception_line)
+    if not perception:
+        return perceptions
+
+    sensor_sizes = []
+    for sensor_values in perception.values():
+        if sensor_values is None:
+            return perceptions
+        size = len(sensor_values)
+        if size == 0:
+            return perceptions
+        sensor_sizes.append(size)
+
+    for i in range(max(sensor_sizes)):
+        perception_line = {}
+        for sensor, value in perception.items():
+            sid = i % len(value)
+            perception_line[sensor + str(sid)] = value[sid]
+        perceptions.append(perception_line)
 
     return perceptions
 
-def compare_perceptions(input_1, input_2, thresh=0.01):
+def compare_perceptions(input_1, input_2, thresh=0.01, label_mode="equal"):
     """
     Return True if both perceptions have the same value. False otherwise.
 
-    :param sensing: Sensing in the current iteration.
-    :type sensing: dict
-    :param old_sensing: Sensing in the last iteration.
-    :type old_sensing: dict
-    :return: Boolean that indicates if there is a sensorial change.
+    :param input_1: The first perception.
+    :type input_1: core.container.Container
+    :param input_2: The second perception.
+    :type input_2: core.container.Container
+    :param thresh: The threshold for comparison.
+    :type thresh: float
+    :param label_mode: The mode for comparing labels.
+                        - "equal": labels must be the same for both perceptions.
+                        - "subset": labels of one perception must be a subset of the other.
+    :type label_mode: str   
+    :return: Boolean that indicates if the perceptions are equivalent.
     :rtype: bool
     """
 
-    for sensor in input_1:
-        for perception_1, perception_2 in zip(input_1[sensor], input_2[sensor]):
-            if isinstance(perception_1, dict):
-                for attribute in perception_1:
-                    difference = abs(perception_1[attribute] - perception_2[attribute])
-                    if difference > thresh:
-                        return False
-            else:
-                if abs(perception_1[0] - perception_2[0]) > thresh:
-                    return False
-    return True
+    labels_1 = set(input_1.feature_labels)
+    labels_2 = set(input_2.feature_labels)
+    
+
+    if label_mode == "equal":
+        labels = labels_1
+        if labels_1 != labels_2:
+            return False
+    elif label_mode == "subset":
+        if not (labels_1.issubset(labels_2) or labels_2.issubset(labels_1)):
+            return False
+        labels = labels_1.intersection(labels_2)
+    label_list = list(labels)
+    data_1 = input_1.read().sel(features=label_list).values
+    data_2 = input_2.read().sel(features=label_list).values
+
+    if data_1.shape[0] != data_2.shape[0]:
+        return False
+
+    diff = abs(data_1 - data_2)
+    max_diff = np.max(diff)
+    return max_diff <= thresh
 
 class EncodableDecodableEnum(Enum):
     """Enum class that can be encoded and decoded to/from a normalized value."""

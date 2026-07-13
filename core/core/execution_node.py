@@ -4,6 +4,7 @@ import rclpy
 import yaml
 import importlib
 import asyncio
+import traceback    
 
 import rclpy.logging
 from rclpy.node import Node
@@ -147,7 +148,12 @@ class ExecutionNode(Node):
       
         self.get_logger().info(f'Creating new {class_name} {name}...')
 
-        new_node = class_from_classname(class_name)(name, **parameters)
+        try:
+            new_node = class_from_classname(class_name)(name, class_name=class_name, **parameters)
+        except Exception as e:
+            self.get_logger().error(f"Unhandled exception: {e}\n{traceback.format_exc()}")
+            response.created = False
+            return response
 
         self.nodes[name] = new_node
 
@@ -396,8 +402,14 @@ def create_execution_node(id: int, threads: int, args=None):
     """
     rclpy.init(args=args)
     if threads>1:
+        rclpy.logging.get_logger(f"execution_node_{id}").info(
+            f"Creating multi-threaded executor with {threads} threads."
+        )
         executor=MultiThreadedExecutor(num_threads=threads)
     else:
+        rclpy.logging.get_logger(f"execution_node_{id}").info(
+            f"Creating single-threaded executor."
+        )
         executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor, id)
     executor.add_node(execution_node)
@@ -405,6 +417,10 @@ def create_execution_node(id: int, threads: int, args=None):
         executor.spin()
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        rclpy.logging.get_logger(f"execution_node_{id}").error(
+            f"Unhandled exception: {e}\n{traceback.format_exc()}"
+        )
     finally:
         pass
         for node in execution_node.nodes.values():
