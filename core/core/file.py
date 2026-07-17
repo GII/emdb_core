@@ -295,12 +295,14 @@ class FileLastIterationGoalsContent(FileGoalsContent):
 
 class FileCNodesContent(File):
     """A file that saves C-Node content from the LTM cache."""
+    def __init__(self, ident, file_name, node, save_interval=100, **params):
+        super().__init__(ident, file_name, node, **params)
+        self.save_interval = save_interval
 
     def write_header(self):
         """Write the header of the file."""
         super().write_header()
         self.file_object.write("Iteration\tIdent\tWorldModel\tPNode\tGoal\tPolicy\tNeighbors\n")
-        self.ite = 100  # Iterations between writings #TODO Vary iterations
 
     def _neighbor_by_type(self, neighbors, node_type):
         for neighbor in neighbors:
@@ -336,10 +338,9 @@ class FileCNodesContent(File):
 
     def write(self):
         """Writes C-Nodes contents."""
-        if "CNode" in self.node.LTM_cache and self.node.iteration % 100 == 0:  # TODO Vary iterations
-            self._write_cnodes(self.ite)
-            self.ite = self.ite + 100  # TODO Vary iterations
-
+        write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
+        if "CNode" in self.node.LTM_cache and write_needed:
+            self._write_cnodes(self.node.iteration)
 
 class FileLastIterationCNodesContent(FileCNodesContent):
     """A file that saves C-Node content at the end of an experiment."""
