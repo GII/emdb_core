@@ -83,7 +83,7 @@ class FileGoodness(File):
     def write(self):
         """Write statistics data."""
         reward_list = self.node.current_episode.reward_list
-        if reward_list is None:
+        if not reward_list:
             return
         formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(reward_list.items())}
         current_world = self.node.current_world if self.node.current_world else "None"
@@ -315,21 +315,32 @@ class FileNeighbors(File):
                         self._write_file("\n")
 
 class FileNeighborsFull(File):
-    """A file that saves the full neighbor tree at the end of an experiment."""    
+    """A file that saves the full neighbor graph for all node types at the end of an experiment."""    
     def write_header(self):
         """Write the header of the file."""
         super().write_header()
-        self._write_file("Goal\tNeighbor1\tNeighbor2\n")
+        self._write_file("NodeType\tNodeName\tNeighborName\tNeighborType\n")
         self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
     
     def write(self):
-        """Writes neighbors list for each node.""" 
+        """Writes one row per neighbor edge for every node type in the LTM.""" 
         if self.node.iteration == self.node.iterations:
             response = self.ltm_client.send_request(name="")
             nodes = yaml.safe_load(response.data)
-            for goal in nodes['Goal']:
-                self._write_file(str(goal) + "\t")
-                self._write_file(str(nodes['Goal'][goal]["neighbors"]) + "\n")
+            for node_type, node_dict in nodes.items():
+                if not isinstance(node_dict, dict):
+                    continue
+                for node_name, node_data in node_dict.items():
+                    neighbors = node_data.get("neighbors", []) if isinstance(node_data, dict) else []
+                    if neighbors:
+                        for neighbor in neighbors:
+                            self._write_file(
+                                f"{node_type}\t{node_name}\t{neighbor['name']}\t{neighbor['node_type']}\n"
+                            )
+                    else:
+                        self._write_file(f"{node_type}\t{node_name}\t\t\n")
+            if self.file_object:
+                self.file_object.flush()  # single end-of-run dump: don't risk losing it in the buffer
 
 class FileEpisodesDataset(File):
     """A file that records the episodes published"""
