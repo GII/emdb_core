@@ -196,6 +196,15 @@ class FileSpaceContent(File):
         self.header_finished = True
         self.labels = labels
 
+    def write_needed(self):
+        """
+        Check if writing is needed based on the save interval and current iteration.
+
+        :return: True if writing is needed, False otherwise.
+        :rtype: bool
+        """
+        return (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
+
     
 
 class FilePNodesContent(FileSpaceContent):
@@ -217,8 +226,7 @@ class FilePNodesContent(FileSpaceContent):
 
     def write(self):
         """Writes P-Nodes contents."""    
-        write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
-        if "PNode" in self.node.LTM_cache and write_needed:
+        if "PNode" in self.node.LTM_cache and self.write_needed():
             for pnode in self.node.LTM_cache["PNode"]:
                 if pnode not in self.created_clients:
                     self.create_pnode_client(pnode)
@@ -233,17 +241,12 @@ class FilePNodesContent(FileSpaceContent):
 
 class FileLastIterationPNodesContent(FilePNodesContent):
     """A file that saves the contents of the P-nodes at the end of an experiment."""
-    def write(self):
-        """Writes P-Nodes contents"""  
-        if "PNode" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
-            for pnode in self.node.LTM_cache["PNode"]:
-                self.create_pnode_client(pnode)
-
-                if self.created_clients[pnode]:
-                    response = self.created_clients[pnode].send_request()
-                    space = Container.from_msg(response.space)
-                    if space:
-                        self._write_space_content(space, ident=pnode)
+    
+    def write_needed(self):
+        """Check if writing is needed based on the current iteration.
+        Write is needed only if the current iteration is the last one.
+        """
+        return self.node.iteration == self.node.iterations
 
                     
         
@@ -267,7 +270,7 @@ class FileGoalsContent(FileSpaceContent):
 
     def write(self):
         """Writes Goals contents.""" 
-        if "Goal" in self.node.LTM_cache and self.node.iteration % self.save_interval == 0: #TODO Vary iterations
+        if "Goal" in self.node.LTM_cache and self.write_needed():
             for goal in self.node.LTM_cache["Goal"]:
                 if goal not in self.created_clients:
                     self.create_goal_client(goal)
@@ -280,17 +283,71 @@ class FileGoalsContent(FileSpaceContent):
 
 class FileLastIterationGoalsContent(FileGoalsContent):
     """A file that saves the contents of the Goals at the end of an experiment."""
-    def write(self):
-        """Writes Goals contents.""" 
-        if "Goal" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
-            for goal in self.node.LTM_cache["Goal"]:
-                self.create_goal_client(goal)
-                if self.created_clients[goal]:
-                    response = self.created_clients[goal].send_request()
-                    space = Container.from_msg(response.space)
-                    if space:
-                        self._write_space_content(space, ident=goal)
 
+    def write_needed(self):
+        """Check if writing is needed based on the current iteration.
+        Write is needed only if the current iteration is the last one.
+        """
+        return self.node.iteration == self.node.iterations
+
+
+
+class FileCNodesContent(File):
+    """A file that saves C-Node content from the LTM cache."""
+    def __init__(self, ident, file_name, node, save_interval=100, **params):
+        super().__init__(ident, file_name, node, **params)
+        self.save_interval = save_interval
+
+    def write_header(self):
+        """Write the header of the file."""
+        super().write_header()
+        self.file_object.write("Iteration\tIdent\tWorldModel\tPNode\tGoal\tPolicy\tNeighbors\n")
+
+    def _neighbor_by_type(self, neighbors, node_type):
+        for neighbor in neighbors:
+            if neighbor.get("node_type") == node_type:
+                return neighbor.get("name", "")
+        return ""
+
+    def _write_cnodes(self, iteration_value):
+        for cnode, cnode_data in self.node.LTM_cache["CNode"].items():
+            neighbors = cnode_data.get("neighbors", [])
+            world_model = self._neighbor_by_type(neighbors, "WorldModel")
+            pnode = self._neighbor_by_type(neighbors, "PNode")
+            goal = self._neighbor_by_type(neighbors, "Goal")
+            policy = self._neighbor_by_type(neighbors, "Policy")
+            neighbor_names = [neighbor.get("name", "") for neighbor in neighbors]
+
+            self.file_object.write(
+                str(iteration_value)
+                + "\t"
+                + str(cnode)
+                + "\t"
+                + str(world_model)
+                + "\t"
+                + str(pnode)
+                + "\t"
+                + str(goal)
+                + "\t"
+                + str(policy)
+                + "\t"
+                + str(neighbor_names)
+                + "\n"
+            )
+
+    def write(self):
+        """Writes C-Nodes contents."""
+        write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
+        if "CNode" in self.node.LTM_cache and write_needed:
+            self._write_cnodes(self.node.iteration)
+
+class FileLastIterationCNodesContent(FileCNodesContent):
+    """A file that saves C-Node content at the end of an experiment."""
+
+    def write(self):
+        """Writes C-Nodes contents."""
+        if "CNode" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
+            self._write_cnodes(self.node.iterations)
 
 class FileNeighbors(File):
     """A file that saves the neighbors of each node (Method specific to track the subgoals created by effectance)."""    

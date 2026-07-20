@@ -115,7 +115,7 @@ class CognitiveNode(Node):
         )
 
         #Periodic publishing of activation
-        self.activation_publish_timer=self.create_timer(0.001, self.publish_activation_callback, callback_group=self.cbgroup_server)
+        self.activation_publish_timer=self.create_timer(0.05, self.publish_activation_callback, callback_group=self.cbgroup_server)
 
         # Suscription to override activation topic
         self.override_activation_topic_subscriber = self.create_subscription(
@@ -527,10 +527,12 @@ class CognitiveNode(Node):
         """
         node_name=msg.node_name
         if node_name in self.activation_inputs:
-            if Time.from_msg(msg.timestamp).nanoseconds>Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds:
+            msg_time = Time.from_msg(msg.timestamp).nanoseconds
+            current_time = Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds
+            if msg_time>current_time:
                 self.activation_inputs[node_name]['data']=msg
                 self.activation_inputs[node_name]['updated']=True
-            elif Time.from_msg(msg.timestamp).nanoseconds<Time.from_msg(self.activation_inputs[node_name]['data'].timestamp).nanoseconds:
+            elif msg_time<current_time:
                 self.get_logger().warn(f'Detected jump back in time, activation of node: {node_name} ({msg.node_type})')
 
     def read_override_activation_callback(self, msg: Activation):
@@ -540,12 +542,14 @@ class CognitiveNode(Node):
         :param msg: Activation message to override the node's activation.
         :type msg: cognitive_node_interfaces.msg.Activation
         """
-        if Time.from_msg(msg.timestamp).nanoseconds>Time.from_msg(self.override_input.timestamp).nanoseconds:
+        msg_time = Time.from_msg(msg.timestamp).nanoseconds
+        current_time = Time.from_msg(self.override_input.timestamp).nanoseconds
+        if msg_time>current_time:
             if self.override_input.node_name != msg.node_name:
                 self.get_logger().warn(f'Override activation received from a different node. Previous: {self.override_input.node_name}, New: {msg.node_name}')
             self.override_input=msg
             self.get_logger().debug(f'Override activation received: {self.override_input.activation} from node {self.override_input.node_name} ({self.override_input.node_type})')
-        elif Time.from_msg(msg.timestamp).nanoseconds<Time.from_msg(self.override_input.timestamp).nanoseconds:
+        elif msg_time<current_time:
             self.get_logger().warn(f'Detected jump back in time, override activation of node: {msg.node_name} ({msg.node_type})')
         
     def add_neighbor_client(self, node_name, neighbor_name):

@@ -314,7 +314,7 @@ class LTM(Node):
                 if name in self.cognitive_nodes[node_type]:
                     data_dic = self.cognitive_nodes[node_type][name]
                     data = yaml.dump(data_dic)
-                    self.get_logger().info(f"{node_type} {name}: {data}")
+                    self.get_logger().debug(f"{node_type} {name}: {data}")
                     response.data = data
                     return response
             self.get_logger().info(f"{node_type} {name} doesn't exist.")
