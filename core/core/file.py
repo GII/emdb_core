@@ -85,8 +85,6 @@ class FileGoodness(File):
         reward_list = self.node.current_episode.reward_list
         if reward_list is None:
             return
-        # An empty reward dict still gets a row: one line per iteration keeps
-        # the file continuous for plotting.
         formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(reward_list.items())}
         current_world = self.node.current_world if self.node.current_world else "None"
         self._write_file(
@@ -103,8 +101,6 @@ class FileGoodness(File):
             + str(self.node.n_cnodes)
             + "\n"
         )
-        if self.file_object:
-            self.file_object.flush()  # one row per iteration: keep it on disk even if the run is killed
 
         
 
@@ -400,8 +396,6 @@ class FileNeighborsFull(File):
                             )
                     else:
                         self._write_file(f"{node_type}\t{node_name}\t\t\n")
-            if self.file_object:
-                self.file_object.flush()  # single end-of-run dump: don't risk losing it in the buffer
 
 class FileEpisodesDataset(File):
     """A file that records the episodes published"""
