@@ -421,7 +421,7 @@ class FileEpisodesDataset(File):
         self.semaphore.acquire()    
         dataframe = self.episodic_buffer.get_dataframes()[0]
         if dataframe is not None:
-            dataframe.to_csv(self.file_object)
+            dataframe.to_csv(self.file_object, sep="\t")
         super().close()
         self.semaphore.release()
 
