@@ -471,8 +471,10 @@ class CognitiveNode(Node):
                     self.activation_inputs[node_name]['updated']=False
                 self.write_metacognitive_parameters(self.activation)
                 # The override input is used to force the activation to a certain value, if it is higher than the calculated activation.
-                if self.activation.activation<self.override_input.activation:
+                if self.activation.activation<self.override_input.activation and self.activation.activation>=0.0:
                     self.activation.activation=self.override_input.activation
+                elif self.activation.activation<0.0: # HACK, ALLOWS TO OVERRIDE THE OVERRIDE IF THE ACTIVATION IS NEGATIVE
+                    self.activation.activation=0.0
                 self.publish_activation(self.activation)
 
 
