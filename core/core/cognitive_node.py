@@ -1,6 +1,8 @@
 import yaml
 import inspect
 import numpy
+import re
+from copy import deepcopy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
@@ -8,8 +10,8 @@ from rclpy.time import Time
 from core.service_client import ServiceClientAsync
 from core.container import Container
 
-from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
-from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor
+from core_interfaces.srv import AllocateDuplicateName, AddNodeToLTM, DeleteNodeFromLTM, UpdateNeighbor, CreateNode
+from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor, DuplicateNode
 from cognitive_node_interfaces.msg import Activation, MetacognitiveParameters
 
 
@@ -57,6 +59,8 @@ class CognitiveNode(Node):
 
         for key, value in params.items():
             setattr(self, key, value)
+        self.LTM_id = params.get("LTM_id", params.get("ltm_id", "ltm_0"))
+        self.ltm_id = self.LTM_id
 
         #Callback groups to separate between service requests, service calls and activation callbacks
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
@@ -64,6 +68,7 @@ class CognitiveNode(Node):
         self.cbgroup_activation=MutuallyExclusiveCallbackGroup()
 
         self.node_clients={} #Keys are service name, values are service client object e.g. {'cognitive_node/policy0/get_activation: "Object: Node.client"'}
+        self._duplicate_parameters = {}
 
         # Publish node activation topic (when SetActivationTopic is true)
         self.publish_activation_topic = self.create_publisher(
@@ -114,6 +119,13 @@ class CognitiveNode(Node):
             self.delete_neighbor_callback, callback_group=self.cbgroup_server
         )
 
+        self.duplicate_node_service = self.create_service(
+            DuplicateNode,
+            'cognitive_node/' + str(name) + '/duplicate_node',
+            self.duplicate_node_callback,
+            callback_group=self.cbgroup_server
+        )
+
         #Periodic publishing of activation
         self.activation_publish_timer=self.create_timer(0.05, self.publish_activation_callback, callback_group=self.cbgroup_server)
 
@@ -124,11 +136,28 @@ class CognitiveNode(Node):
             self.read_override_activation_callback, 1, callback_group=self.cbgroup_activation
         )
 
-        #Service clients to add or delete nodes from the LTM
-        service_name_add_LTM = 'ltm_0' + '/add_node' # TODO choose LTM ID
-        self.add_node_to_LTM_client = ServiceClientAsync(self, AddNodeToLTM, service_name_add_LTM, self.cbgroup_client)
-        service_name_delete_LTM = 'ltm_0' + '/delete_node' # TODO: choose the ltm ID
-        self.delete_node_client = ServiceClientAsync(self, DeleteNodeFromLTM, service_name_delete_LTM, self.cbgroup_client)
+        self._ltm_clients_id = None
+
+    def _ensure_ltm_clients(self):
+        """Create LTM clients after subclasses have finalized their LTM id."""
+        ltm_id = getattr(self, "LTM_id", None) or getattr(self, "ltm_id", None)
+        if not ltm_id:
+            raise ValueError("No LTM id is configured for this cognitive node.")
+        if self._ltm_clients_id == ltm_id:
+            return
+        self.LTM_id = ltm_id
+        self.ltm_id = ltm_id
+        self.add_node_to_LTM_client = ServiceClientAsync(
+            self, AddNodeToLTM, f"{ltm_id}/add_node", self.cbgroup_client
+        )
+        self.delete_node_client = ServiceClientAsync(
+            self, DeleteNodeFromLTM, f"{ltm_id}/delete_node", self.cbgroup_client
+        )
+        self.allocate_duplicate_name_client = ServiceClientAsync(
+            self, AllocateDuplicateName, f"{ltm_id}/allocate_duplicate_name",
+            self.cbgroup_client
+        )
+        self._ltm_clients_id = ltm_id
 
     def setup_connectors(self):
         """
@@ -175,6 +204,7 @@ class CognitiveNode(Node):
         :return: A future that will contain the response from the LTM service.
         :rtype: rclpy.task.Future
         """
+        self._ensure_ltm_clients()
         self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
 
         data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors})
@@ -191,6 +221,7 @@ class CognitiveNode(Node):
         :return: True if the operation was succesful, False otherwise.
         :rtype: core_interfaces.srv.DeleteNodeFromLTM.Response
         """
+        self._ensure_ltm_clients()
         ltm_response = self.delete_node_client.send_request_async(name=self.name)
         return ltm_response.deleted
    
@@ -596,6 +627,7 @@ class CognitiveNode(Node):
         :rtype: Future
         """        
         if getattr(self, "LTM_id", None):
+            self._ensure_ltm_clients()
             service_name=f"{self.LTM_id}/update_neighbor"
             if service_name not in self.node_clients:
                 self.node_clients[service_name] = ServiceClientAsync(self, UpdateNeighbor, service_name, self.cbgroup_client)
@@ -625,6 +657,80 @@ class CognitiveNode(Node):
             name=name, class_name=class_name, parameters=params_str
         )
         return response
+
+    def get_duplicate_parameters(self, include_neighbors=True):
+        """
+        Return constructor parameters that are safe to use for a duplicate.
+
+        Subclasses should populate ``_duplicate_parameters`` with their
+        constructor configuration. Runtime ROS objects are deliberately not
+        inferred from ``__dict__``.
+        """
+        parameters = deepcopy(self._duplicate_parameters)
+        if include_neighbors:
+            parameters["neighbors"] = deepcopy(self.neighbors)
+        return parameters
+
+    def register_duplicate_parameters(self, **parameters):
+        """Register constructor parameters required to recreate this node."""
+        self._duplicate_parameters.update(deepcopy(parameters))
+
+    async def duplicate_node_callback(self, request, response):
+        """Create a duplicate through the common cognitive-node service."""
+        duplicate_name = await self.duplicate_node(
+            name=request.name or None,
+            include_neighbors=request.include_neighbors,
+        )
+        response.duplicate_node_name = duplicate_name or ""
+        response.duplicated = duplicate_name is not None
+        return response
+
+    async def duplicate_node(
+        self, name=None, parameters=None, include_neighbors=True
+    ):
+        """
+        Create a duplicate of this node through the commander.
+
+        :param name: Optional name for the duplicate. If omitted, a unique
+            ``<name>_dup_<count>`` name is generated.
+        :param parameters: Optional constructor parameters that override the
+            node's duplicate defaults.
+        :return: The duplicate name, or ``None`` when creation fails.
+        """
+        if name is None:
+            root_name = re.sub(r"(?:_dup_\d+)+$", "", self.name)
+            self._ensure_ltm_clients()
+            response = await self.allocate_duplicate_name_client.send_request_async(
+                root_name=root_name
+            )
+            if not response.allocated:
+                self.get_logger().error(
+                    f"Failed to allocate a duplicate name for {self.name}."
+                )
+                return None
+            name = response.duplicate_name
+        if name == self.name:
+            raise ValueError("A duplicate must have a different name.")
+
+        duplicate_parameters = self.get_duplicate_parameters(include_neighbors)
+        if parameters is not None:
+            duplicate_parameters.update(deepcopy(parameters))
+
+        response = await self.create_node_client(
+            name=name,
+            class_name=self.class_name,
+            parameters=duplicate_parameters,
+        )
+        success = getattr(response, "created", response)
+        if not success:
+            self.get_logger().error(
+                f"Failed to duplicate {self.node_type} {self.name} as {name}."
+            )
+            return None
+        self.get_logger().info(
+            f"Duplicated {self.node_type} {self.name} as {name}."
+        )
+        return name
 
 
     def __str__(self):

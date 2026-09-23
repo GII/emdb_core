@@ -51,7 +51,7 @@ class CommanderNode(Node):
         requested_seed = self.declare_parameter('random_seed', value = 0).get_parameter_value().integer_value
         self.random_seed = resolve_seed(requested_seed)
         self.get_logger().info(f"Using random seed {self.random_seed} (requested: {requested_seed})")
-        self.global_params = {"random_seed": self.random_seed}
+        self.global_params = {"random_seed": self.random_seed, "ltm_id": "ltm_0"}
 
             
         # Add Execution Node Service for the Execution Nodes

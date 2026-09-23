@@ -8,7 +8,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
 from rclpy import spin_until_future_complete
 
-from core_interfaces.srv import AddNodeToLTM, DeleteNodeFromLTM, GetNodeFromLTM, ReplaceNodeFromLTM, SetChangesTopic, UpdateNeighbor
+from core_interfaces.srv import AddNodeToLTM, AllocateDuplicateName, DeleteNodeFromLTM, GetNodeFromLTM, ReplaceNodeFromLTM, SetChangesTopic, UpdateNeighbor
 from cognitive_node_interfaces.srv import AddNeighbor, DeleteNeighbor
 from core.service_client import ServiceClient, ServiceClientAsync
 
@@ -45,6 +45,8 @@ class LTM(Node):
         self.changes_topic = False
         # TODO Create keys from config file
         self.cognitive_nodes = {'CNode': {}, 'Drive': {}, 'Goal': {}, 'RobotPurpose': {}, 'Policy': {}, 'Perception': {},'PNode': {}, 'UtilityModel': {}, 'WorldModel': {}}
+        self._duplicate_counters = {}
+        self._reserved_duplicate_names = set()
 
         
         # State topic
@@ -64,6 +66,13 @@ class LTM(Node):
             AddNodeToLTM,
             'ltm_' + str(self.id) + '/add_node',
             self.add_node_callback, callback_group=self.cbgroup_server
+        )
+
+        self.allocate_duplicate_name_service = self.create_service(
+            AllocateDuplicateName,
+            'ltm_' + str(self.id) + '/allocate_duplicate_name',
+            self.allocate_duplicate_name_callback,
+            callback_group=self.cbgroup_server,
         )
 
         # Replace node service
@@ -185,6 +194,22 @@ class LTM(Node):
     # endregion Properties
     
     # region Callbacks
+    def allocate_duplicate_name_callback(self, request, response):
+        """Reserve the next duplicate name for a node family."""
+        root_name = str(request.root_name)
+        index = self._duplicate_counters.get(root_name, 0)
+        while (
+            self.node_exists_any_type(f"{root_name}_dup_{index}")
+            or f"{root_name}_dup_{index}" in self._reserved_duplicate_names
+        ):
+            index += 1
+        duplicate_name = f"{root_name}_dup_{index}"
+        self._duplicate_counters[root_name] = index + 1
+        self._reserved_duplicate_names.add(duplicate_name)
+        response.duplicate_name = duplicate_name
+        response.allocated = True
+        return response
+
     async def add_node_callback(self, request, response): 
         """
         Callback function for the 'add_node' service.
@@ -477,6 +502,10 @@ class LTM(Node):
         if node_type in self.cognitive_nodes:
             return node_name in self.cognitive_nodes[node_type]
         return False
+
+    def node_exists_any_type(self, node_name):
+        """Return whether a node name is present in any LTM node type."""
+        return any(node_name in nodes for nodes in self.cognitive_nodes.values())
     
     def node_type_exists(self, node_type):
         """
