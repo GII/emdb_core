@@ -453,8 +453,8 @@ class LTM(Node):
                 neighbors=goals+world_models+policies
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors
             """
-            #Any other node type is linked to all perceptions
-            if node_type!='Perception':
+            # Some node types are linked to Perceptions by default.
+            if node_type in ['PNode', 'WorldModel', 'Policy']:
                 neighbors=[{'name': perception, 'node_type': 'Perception'} for perception in self.cognitive_nodes['Perception']]
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors 
 
