@@ -362,6 +362,7 @@ class LTM(Node):
         changes_topic = request.changes_topic
         self.changes_topic = changes_topic
         self.get_logger().info(f"Changes topic set to {changes_topic}")
+        self.publish_state()  # Publish the current state after setting the changes topic
         response.changes_topic = changes_topic
         return response
     
