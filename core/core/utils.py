@@ -1,4 +1,5 @@
 import importlib
+import sys
 import math
 import time
 import numpy as np
@@ -281,3 +282,29 @@ class EncodableDecodableEnum(Enum):
             if member.value == index:
                 return member.name
         raise ValueError(f"No matching class for normalized value {value}")
+
+
+def log_level_args(argv=None):
+    """
+    Extracts the --log-level ROS arguments from a command line, so that they can be
+    forwarded to the processes spawned by a node (e.g. the execution nodes).
+
+    :param argv: Command line arguments, defaults to sys.argv.
+    :type argv: list
+    :return: Arguments for rclpy.init with the log levels, or None if there are none.
+    :rtype: list or None
+    """
+    argv = sys.argv if argv is None else argv
+    levels = []
+    in_ros_args = False
+    tokens = iter(argv)
+    for token in tokens:
+        if token == "--ros-args":
+            in_ros_args = True
+        elif token == "--":
+            in_ros_args = False
+        elif in_ros_args and token == "--log-level":
+            value = next(tokens, None)
+            if value is not None:
+                levels += ["--log-level", value]
+    return [argv[0] if argv else "", "--ros-args", *levels] if levels else None
