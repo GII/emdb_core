@@ -14,6 +14,9 @@ from core_interfaces.srv import AllocateDuplicateName, AddNodeToLTM, DeleteNodeF
 from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInformation, SetActivationTopic, AddNeighbor, DeleteNeighbor, DuplicateNode
 from cognitive_node_interfaces.msg import Activation, MetacognitiveParameters
 
+# Default period (seconds) of the activation timer of cognitive nodes.
+DEFAULT_ACTIVATION_PERIOD = 0.01
+
 
 class CognitiveNode(Node):
     """
@@ -126,8 +129,10 @@ class CognitiveNode(Node):
             callback_group=self.cbgroup_server
         )
 
-        #Periodic publishing of activation
-        self.activation_publish_timer=self.create_timer(0.05, self.publish_activation_callback, callback_group=self.cbgroup_server)
+        #Periodic publishing of activation. The period can be set for all the nodes of an
+        #experiment in its configuration file (LTM: Globals: activation_period, in seconds).
+        activation_period = (getattr(self, "globals", None) or {}).get("activation_period", DEFAULT_ACTIVATION_PERIOD)
+        self.activation_publish_timer=self.create_timer(activation_period, self.publish_activation_callback, callback_group=self.cbgroup_server)
 
         # Suscription to override activation topic
         self.override_activation_topic_subscriber = self.create_subscription(
