@@ -12,7 +12,7 @@ from core.config import saved_data_dir
 from std_msgs.msg import String
 from core.service_client import ServiceClient
 from core.execution_node import create_execution_node
-from core.utils import resolve_seed
+from core.utils import resolve_seed, log_level_args
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
@@ -227,7 +227,9 @@ class CommanderNode(Node):
         new_id = str(self.last_id)
 
         #Spawn child process with executor node
-        p=mp.Process(target=create_execution_node, name=f"execution_node_{new_id}", args=(new_id, threads,))
+        # Execution nodes are new processes: forward the log levels given to the commander
+        # (e.g. by the launch file) so that all the cognitive nodes respect them.
+        p=mp.Process(target=create_execution_node, name=f"execution_node_{new_id}", args=(new_id, threads, log_level_args()))
         p.start()
         
 

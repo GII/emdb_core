@@ -132,23 +132,90 @@ class FileTrialsSuccess(File):
     def write_header(self):
         """Write the header of the file."""
         super().write_header()
-        self._write_file("Iteration\tTrial\tIterations\tSuccess\n")
+        self._write_file(
+            "Iteration\tTrial\tIterations\tEpisodeCount\tSuccess\n"
+        )
 
     def write(self):
         """Write success."""
-        for iteration, trial, iterations, success in self.node.trials_data:
+        for iteration, trial, iteration_span, episode_count, success in self.node.trials_data:
             self._write_file(
                 str(iteration)
                 + "\t"
                 + str(trial)
                 + "\t"
-                + str(iterations)
+                + str(iteration_span)
+                + "\t"
+                + str(episode_count)
                 + "\t"
                 + str(success)
                 + "\n"
             )
             self.file_object.flush()
         self.node.trials_data = []
+
+
+class FilePNodesConfidence(File):
+    """A time series of P-Node rolling confidence and goal-link status."""
+
+    def __init__(self, ident, file_name, node, **params):
+        super().__init__(ident, file_name, node, **params)
+        self.subscriptions = {}
+
+    def write_header(self):
+        super().write_header()
+        self._write_file("Iteration\tPNode\tConfidence\tGoalLinked\n")
+
+    def write(self):
+        pnodes = self.node.LTM_cache.get("PNode", {})
+        for pnode_name in pnodes:
+            if pnode_name not in self.subscriptions:
+                self.subscriptions[pnode_name] = self.node.create_subscription(
+                    SuccessRate,
+                    f"pnode/{pnode_name}/success_rate",
+                    self.success_rate_callback,
+                    1,
+                    callback_group=self.node.cbgroup_client,
+                )
+
+    def success_rate_callback(self, msg):
+        self._write_file(
+            f"{self.node.iteration}\t{msg.node_name}\t"
+            f"{msg.success_rate:.6f}\t{int(msg.flag)}\n"
+        )
+
+
+class FileSubgoalEvents(File):
+    """Records newly created effectance subgoals with their graph context."""
+
+    def __init__(self, ident, file_name, node, **params):
+        super().__init__(ident, file_name, node, **params)
+        self.seen_goals = set()
+
+    def write_header(self):
+        super().write_header()
+        self._write_file("Iteration\tSubgoal\tPNode\tParentGoals\n")
+
+    @staticmethod
+    def _neighbors(goal_data, node_type):
+        return [
+            neighbor["name"]
+            for neighbor in goal_data.get("neighbors", [])
+            if neighbor.get("node_type") == node_type
+        ]
+
+    def write(self):
+        goals = self.node.LTM_cache.get("Goal", {})
+        for goal_name, goal_data in goals.items():
+            if not goal_name.startswith("reach_pnode_") or goal_name in self.seen_goals:
+                continue
+            pnodes = self._neighbors(goal_data, "PNode")
+            parent_goals = self._neighbors(goal_data, "Goal")
+            self._write_file(
+                f"{self.node.iteration}\t{goal_name}\t"
+                f"{'|'.join(pnodes)}\t{'|'.join(parent_goals)}\n"
+            )
+            self.seen_goals.add(goal_name)
 
 class FileSpaceContent(File):
     def __init__(self, ident, file_name, node, **params):
@@ -554,6 +621,4 @@ class FileSaveModels(File):
 
     def close(self):
         return None
-
-
 

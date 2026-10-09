@@ -14,6 +14,8 @@ import pandas as pd
 
 _TABULAR_FILES = {
     "trials": "trials_*.txt",
+    "pnodes_confidence": "pnodes_confidence_*.txt",
+    "subgoal_events": "subgoal_events_*.txt",
     "pnodes_content": "pnodes_content_*.txt",
     "goals_content": "goals_content_*.txt",
     "pnodes_success": "pnodes_success_*.txt",
