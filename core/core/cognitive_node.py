@@ -15,6 +15,20 @@ from cognitive_node_interfaces.srv import GetActivation, GetConfidence, GetInfor
 from cognitive_node_interfaces.msg import Activation, MetacognitiveParameters
 
 
+def neighbors_from_lists(names, node_types):
+    """
+    Builds a list of neighbors from the parallel lists of names and types used in ROS interfaces.
+
+    :param names: Names of the neighbors.
+    :type names: list
+    :param node_types: Types of the neighbors.
+    :type node_types: list
+    :return: List of neighbors [{'name': <name>, 'node_type': <node_type>}, ...].
+    :rtype: list
+    """
+    return [{'name': name, 'node_type': node_type} for name, node_type in zip(names, node_types)]
+
+
 class CognitiveNode(Node):
     """
     A base class for cognitive nodes in the system.
@@ -207,13 +221,38 @@ class CognitiveNode(Node):
         self._ensure_ltm_clients()
         self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
 
-        data = yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors})
-
-        ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=data)
-        await ltm_response
+        ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=self.ltm_registration_data(data_dic))
+        result = await ltm_response
+        self.apply_neighbors(neighbors_from_lists(result.neighbors_name, result.neighbors_type))
         self.get_logger().debug(f'DEBUG FINISH Registering {self.node_type} {self.name} in LTM...')
 
         return ltm_response
+
+    def ltm_registration_data(self, data_dic=None):
+        """
+        Data sent to the LTM when the node is registered in it.
+
+        :param data_dic: A dictionary with additional data to be saved, defaults to None.
+        :type data_dic: dict
+        :return: The data in YAML format.
+        :rtype: str
+        """
+        data_dic = data_dic or {}
+        return yaml.dump({**data_dic, 'activation': self.activation.activation, 'activation_timestamp': Time.from_msg(self.activation.timestamp).nanoseconds, 'neighbors': self.neighbors})
+
+    def apply_neighbors(self, neighbors):
+        """
+        Adds a list of neighbors to the node, e.g. the ones assigned by the LTM when the node is
+        registered. They go through add_neighbor_callback, so subclasses process them exactly as
+        the ones received through the add_neighbor service. The execution node calls this method
+        before the node starts spinning, so that the definition of its neighbors is atomic.
+
+        :param neighbors: List of neighbors [{'name': <name>, 'node_type': <node_type>}, ...].
+        :type neighbors: list
+        """
+        for neighbor in neighbors:
+            request = AddNeighbor.Request(neighbor_name=neighbor['name'], neighbor_type=neighbor['node_type'])
+            self.add_neighbor_callback(request, AddNeighbor.Response())
     
     def remove_from_LTM(self):
         """
