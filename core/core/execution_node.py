@@ -11,6 +11,11 @@ from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 
 from rclpy.executors import MultiThreadedExecutor
+try:
+    # Event-driven executor implemented in C++ (ROS 2 Jazzy and later).
+    from rclpy.experimental import EventsExecutor
+except ImportError:
+    EventsExecutor = None
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 
@@ -395,13 +400,22 @@ def create_execution_node(id: int, threads: int, args=None):
 
     :param id: The identifier for the execution node.
     :type id: int
-    :param threads: The number of threads for the executor.
+    :param threads: The number of threads for the executor. It only applies when the
+        EventsExecutor (ROS 2 Jazzy and later) is not available.
     :type threads: int
     :param args: Additional arguments for rclpy initialization, defaults to None.
     :type args: list
     """
     rclpy.init(args=args)
-    if threads>1:
+    if EventsExecutor is not None:
+        # The EventsExecutor is much cheaper than the Python executors (whose CPU time is mostly
+        # spent rebuilding wait sets) and it supports coroutine callbacks, so it is used whenever
+        # it is available. It is single threaded: the threads parameter does not apply.
+        rclpy.logging.get_logger(f"execution_node_{id}").info(
+            f"Creating events executor (requested threads: {threads})."
+        )
+        executor = EventsExecutor()
+    elif threads>1:
         rclpy.logging.get_logger(f"execution_node_{id}").info(
             f"Creating multi-threaded executor with {threads} threads."
         )
