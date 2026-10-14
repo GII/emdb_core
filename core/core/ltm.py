@@ -236,7 +236,9 @@ class LTM(Node):
         else:
             data = str(request.data)
             data_dic = yaml.load(data, Loader=yaml.FullLoader)
-            await self.add_node(node_type, name, data_dic)   
+            neighbors = self.add_node(node_type, name, data_dic)
+            response.neighbors_name = [neighbor['name'] for neighbor in neighbors]
+            response.neighbors_type = [neighbor['node_type'] for neighbor in neighbors]
             self.get_logger().info(f"Added {node_type} {name}")
             response.added = True
 
@@ -426,9 +428,13 @@ class LTM(Node):
     # endregion Callbacks
     
     # region CRUD operations
-    async def add_node(self, node_type, node_name, node_data):
+    def add_node(self, node_type, node_name, node_data):
         """
         Add a cognitive node to the LTM.
+
+        If the node has no neighbors, the default neighbors of its type are assigned to it and
+        returned, so that whoever registers the node applies them before the node starts working
+        (the definition of the neighbors of a node, e.g. its perceptions, must be atomic).
 
         :param node_type: The type of the cognitive node.
         :type node_type: str
@@ -436,6 +442,8 @@ class LTM(Node):
         :type node_name: str
         :param node_data: The dictionary containing the data of the cognitive node.
         :type node_data: dict
+        :return: The default neighbors assigned to the node (empty if it already had neighbors).
+        :rtype: list
         """
         self.cognitive_nodes[node_type][node_name] = node_data
         node_dict={'name': node_name, 'node_type': node_type}
@@ -459,11 +467,6 @@ class LTM(Node):
                 neighbors=[{'name': perception, 'node_type': 'Perception'} for perception in self.cognitive_nodes['Perception']]
                 self.cognitive_nodes[node_type][node_name]['neighbors']=neighbors 
 
-            #Calls AddNode service of the new node to add the required neighbors in node's internal dictionary
-            for neighbor in neighbors: 
-                await self.add_neighbor(neighbor['name'], neighbor['node_type'], node_name)
-
-
         """
         #REMOVING THIS TO TEST DIRECTED ACTIVATIONS
         #Add the new node to the dictionary of the corresponding neighbors
@@ -475,6 +478,7 @@ class LTM(Node):
                     self.cognitive_nodes[neighbor_type][neighbor_name]['neighbors'].append(node_dict)
         """
         self.publish_state()
+        return neighbors
     
     def delete_node(self, node_type, node_name):
         """
