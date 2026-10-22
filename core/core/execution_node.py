@@ -26,6 +26,7 @@ from std_msgs.msg import String
 from core_interfaces.srv import AddExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution, AddNodeToLTM
 from core.service_client import ServiceClient, ServiceClientAsync
+from core.blocking_wait_check import register_executor_thread
 
 from core.config import saved_data_dir
 from core.utils import class_from_classname
@@ -500,6 +501,7 @@ def create_execution_node(id: int, threads: int, args=None):
         executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor, id)
     executor.add_node(execution_node)
+    register_executor_thread() # The callbacks of the EventsExecutor are not visible in the Python stack
     try:
         executor.spin()
     except KeyboardInterrupt:

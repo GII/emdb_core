@@ -4,6 +4,7 @@ from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.task import Future
+from core.blocking_wait_check import check_blocking_wait
 
 class ServiceClient(Node):
     """
@@ -24,7 +25,9 @@ class ServiceClient(Node):
         self.cbgroup=MutuallyExclusiveCallbackGroup()
         self.se = SingleThreadedExecutor()
         self.se.add_node(self)
+        self.service_name = service_name
         self.cli = self.create_client(service_type, service_name, callback_group=self.cbgroup)
+        check_blocking_wait(f"ServiceClient waits for the service {service_name}", skip_files=(__file__,))
         while not self.cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info(f'Service {service_name} not available, waiting again...')
         self.req = service_type.Request()
@@ -38,6 +41,7 @@ class ServiceClient(Node):
         :return: The response from the service.
         :rtype: service_type.Response
         """
+        check_blocking_wait(f"synchronous call to the service {self.service_name}", skip_files=(__file__,))
         for key, value in kwargs.items():
             setattr(self.req, key, value)
         self.future = self.cli.call_async(self.req)

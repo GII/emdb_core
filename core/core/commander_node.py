@@ -22,6 +22,7 @@ from core.config import saved_data_dir
 from std_msgs.msg import String
 from core.execution_node import create_execution_node, EXECUTION_NODE_SERVICES, EXECUTION_NODE_READY_TOPIC, READY_CHECK_PERIOD, WAIT_WARNING_PERIOD
 from core.utils import resolve_seed, log_level_args
+from core.blocking_wait_check import register_executor_thread
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
@@ -1085,6 +1086,7 @@ def main(args=None):
         executor = SingleThreadedExecutor()
     executor.add_node(commander)
 
+    register_executor_thread() # The callbacks of the EventsExecutor are not visible in the Python stack
     try:
         executor.spin()
 
