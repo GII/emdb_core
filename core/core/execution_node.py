@@ -11,6 +11,11 @@ from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 
 from rclpy.executors import MultiThreadedExecutor
+try:
+    # Event-driven executor implemented in C++ (ROS 2 Jazzy and later).
+    from rclpy.experimental import EventsExecutor
+except ImportError:
+    EventsExecutor = None
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 
@@ -18,11 +23,12 @@ from core.service_client import ServiceClient
 
 from std_msgs.msg import String
 from core_interfaces.srv import AddExecutionNode
-from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution
-from core.service_client import ServiceClient
+from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution, AddNodeToLTM
+from core.service_client import ServiceClient, ServiceClientAsync
 
 from core.config import saved_data_dir
 from core.utils import class_from_classname
+from core.cognitive_node import neighbors_from_lists
 
 class ExecutionNode(Node):
     """
@@ -53,6 +59,8 @@ class ExecutionNode(Node):
         self.nodes = {}
         self.executor = executor
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
+        self.cbgroup_client=MutuallyExclusiveCallbackGroup()
+        self.ltm_clients = {}
         
 
         self.get_logger().info('Creating execution services')
@@ -157,15 +165,34 @@ class ExecutionNode(Node):
 
         self.nodes[name] = new_node
 
-        self.executor.add_node(new_node)
+        # Cognitive nodes are registered in the LTM and receive the neighbors it assigns (e.g. their
+        # perceptions) before they are added to the executor: a node never works with a partially
+        # defined set of neighbors.
+        if callable(getattr(new_node, 'ltm_registration_data', None)):
+            await self.register_in_ltm(new_node)
 
-        register_method = getattr(new_node, 'register_in_LTM', None)
-        if callable(register_method):
-            await register_method({})
+        self.executor.add_node(new_node)
 
         self.get_logger().info(f'Added node: {name}.')
         response.created = True
         return response
+
+    async def register_in_ltm(self, node):
+        """
+        Registers a cognitive node in its LTM and applies the neighbors assigned by the LTM.
+
+        The node is not spinning yet, so the request is sent through a client of the execution node.
+
+        :param node: The cognitive node.
+        :type node: core.cognitive_node.CognitiveNode
+        """
+        service_name = f"{node.LTM_id}/add_node"
+        if service_name not in self.ltm_clients:
+            self.ltm_clients[service_name] = ServiceClientAsync(self, AddNodeToLTM, service_name, self.cbgroup_client)
+        response = await self.ltm_clients[service_name].send_request_async(
+            name=node.name, node_type=node.node_type, data=node.ltm_registration_data()
+        )
+        node.apply_neighbors(neighbors_from_lists(response.neighbors_name, response.neighbors_type))
 
     def read_node(self, request, response):
         """
@@ -395,13 +422,22 @@ def create_execution_node(id: int, threads: int, args=None):
 
     :param id: The identifier for the execution node.
     :type id: int
-    :param threads: The number of threads for the executor.
+    :param threads: The number of threads for the executor. It only applies when the
+        EventsExecutor (ROS 2 Jazzy and later) is not available.
     :type threads: int
     :param args: Additional arguments for rclpy initialization, defaults to None.
     :type args: list
     """
     rclpy.init(args=args)
-    if threads>1:
+    if EventsExecutor is not None:
+        # The EventsExecutor is much cheaper than the Python executors (whose CPU time is mostly
+        # spent rebuilding wait sets) and it supports coroutine callbacks, so it is used whenever
+        # it is available. It is single threaded: the threads parameter does not apply.
+        rclpy.logging.get_logger(f"execution_node_{id}").info(
+            f"Creating events executor (requested threads: {threads})."
+        )
+        executor = EventsExecutor()
+    elif threads>1:
         rclpy.logging.get_logger(f"execution_node_{id}").info(
             f"Creating multi-threaded executor with {threads} threads."
         )
