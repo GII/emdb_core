@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import rclpy
 import yaml
 import importlib
@@ -25,10 +26,27 @@ from std_msgs.msg import String
 from core_interfaces.srv import AddExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution, AddNodeToLTM
 from core.service_client import ServiceClient, ServiceClientAsync
+from core.blocking_wait_check import register_executor_thread
 
 from core.config import saved_data_dir
 from core.utils import class_from_classname
 from core.cognitive_node import neighbors_from_lists
+
+# Services that every execution node offers to the commander: {name suffix: service type}
+EXECUTION_NODE_SERVICES = {
+    'create': CreateNode,
+    'read': ReadNode,
+    'delete': DeleteNode,
+    'save': SaveNode,
+    'load': LoadNode,
+    'read_all_nodes': ReadNode,
+    'save_all_nodes': SaveNode,
+    'stop_execution': StopExecution,
+}
+# Topic where each execution node announces (with its id) that the commander can use it
+EXECUTION_NODE_READY_TOPIC = 'execution_node_ready'
+READY_CHECK_PERIOD = 0.05  # Seconds between discovery checks
+WAIT_WARNING_PERIOD = 5.0  # Seconds between warnings while waiting for discovery
 
 class ExecutionNode(Node):
     """
@@ -129,7 +147,41 @@ class ExecutionNode(Node):
             10
         )      
 
+        # Ready topic for the Commander Node (see check_commander_discovered)
+        self.ready_publisher = self.create_publisher(String, EXECUTION_NODE_READY_TOPIC, 10)
+        self.next_ready_warning = time.monotonic() + WAIT_WARNING_PERIOD
+        self.ready_timer = self.create_timer(READY_CHECK_PERIOD, self.check_commander_discovered, callback_group=self.cbgroup_client)
+
         self.get_logger().info('Execution node created')
+
+    def check_commander_discovered(self):
+        """
+        Timer callback that announces in the ready topic that the commander can use this
+        execution node, once this node has discovered the commander.
+
+        A service response is lost if the server sends it before it has discovered the
+        response reader of the client (rmw_fastrtps: "client will not receive response"),
+        and the client then waits for it forever. To avoid it, the commander creates its
+        clients for this execution node before launching it, and this node announces that
+        it is ready only when it sees the commander clients of all its services and its
+        ready publisher is matched with the commander subscription. The commander, in turn,
+        waits until its clients see the services (see CommanderNode.check_execution_nodes).
+        """
+        missing = [
+            service for service in EXECUTION_NODE_SERVICES
+            if self.count_clients('execution_node_' + str(self.id) + '/' + service) < 1
+        ]
+        if self.ready_publisher.get_subscription_count() < 1:
+            missing.append(f'subscription to {EXECUTION_NODE_READY_TOPIC}')
+        if missing:
+            if time.monotonic() >= self.next_ready_warning:
+                self.get_logger().warning(f"Waiting to discover the commander. Missing: {', '.join(missing)}")
+                self.next_ready_warning += WAIT_WARNING_PERIOD
+            return
+        self.ready_timer.cancel()
+        self.destroy_timer(self.ready_timer)
+        self.ready_publisher.publish(String(data=str(self.id)))
+        self.get_logger().info('Commander discovered, execution node ready')
 
     
     async def create_node(self, request, response):
@@ -449,6 +501,7 @@ def create_execution_node(id: int, threads: int, args=None):
         executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor, id)
     executor.add_node(execution_node)
+    register_executor_thread() # The callbacks of the EventsExecutor are not visible in the Python stack
     try:
         executor.spin()
     except KeyboardInterrupt:
