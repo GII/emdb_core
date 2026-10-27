@@ -45,7 +45,7 @@ EXECUTION_NODE_SERVICES = {
 }
 # Topic where each execution node announces (with its id) that the commander can use it
 EXECUTION_NODE_READY_TOPIC = 'execution_node_ready'
-READY_CHECK_PERIOD = 0.05  # Seconds between discovery checks
+READY_CHECK_PERIOD = 0.01  # Seconds between discovery checks
 WAIT_WARNING_PERIOD = 5.0  # Seconds between warnings while waiting for discovery
 
 class ExecutionNode(Node):
