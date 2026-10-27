@@ -49,7 +49,7 @@ class ServiceClient(Node):
         self.se.spin_until_future_complete(self.future)
         return self.future.result()
     
-SERVICE_CHECK_PERIOD = 0.05  # Seconds between checks while an asynchronous client waits for its service
+SERVICE_CHECK_PERIOD = 0.01  # Seconds between checks while an asynchronous client waits for its service
 SERVICE_WAIT_WARNING_PERIOD = 5.0  # Seconds between warnings while an asynchronous client waits for its service
 
 
