@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -202,9 +202,17 @@ def response_surface(
     feature_labels: Iterable[str] | None = None,
     grid_points: int = 40,
     quantiles: tuple[float, float] = (0.02, 0.98),
-    baseline: str | pd.Series | np.ndarray = "median",
+    value_range: tuple[float, float] | None = (0.0, 1.0),
+    baseline: str | Mapping[str, float] | pd.Series | np.ndarray = "median",
 ) -> dict[str, np.ndarray | str]:
-    """Evaluate a two-feature conditional response surface."""
+    """Evaluate a two-feature conditional response surface.
+
+    By default, both selected features are evaluated over their full
+    normalized range, [0, 1]. Set ``value_range=None`` to use the ranges
+    defined by ``quantiles`` instead. ``baseline`` may be a mapping to
+    override individual non-surface feature values; unspecified features
+    remain at their median.
+    """
     if len(features) != 2 or features[0] == features[1]:
         raise ValueError("features must contain two distinct feature names")
     if grid_points < 2:
@@ -216,13 +224,27 @@ def response_surface(
         raise KeyError(f"Unknown response-surface features: {sorted(missing)}")
     if not 0 <= quantiles[0] < quantiles[1] <= 1:
         raise ValueError("quantiles must satisfy 0 <= low < high <= 1")
+    if value_range is not None and (
+        len(value_range) != 2
+        or not np.all(np.isfinite(value_range))
+        or value_range[0] >= value_range[1]
+    ):
+        raise ValueError(
+            "value_range must contain two finite values in increasing order"
+        )
 
     if isinstance(baseline, str):
         if baseline != "median":
             raise ValueError(
-                "baseline must be 'median', a Series, or a numeric array"
+                "baseline must be 'median', a mapping, a Series, or a numeric array"
             )
         base = frame.median(numeric_only=True)
+    elif isinstance(baseline, Mapping):
+        unknown = set(baseline) - set(frame.columns)
+        if unknown:
+            raise KeyError(f"Unknown baseline features: {sorted(unknown)}")
+        base = frame.median(numeric_only=True)
+        base.update(pd.Series(baseline, dtype=float))
     elif isinstance(baseline, pd.Series):
         base = baseline.reindex(frame.columns)
     else:
@@ -230,11 +252,16 @@ def response_surface(
         if values.shape != (len(frame.columns),):
             raise ValueError("baseline array must have one value per feature")
         base = pd.Series(values, index=frame.columns)
-    if base.isna().any():
+    if base.isna().any() or not np.all(np.isfinite(base.to_numpy(dtype=float))):
         raise ValueError("baseline must provide a finite value for every feature")
 
-    x_values = np.linspace(*frame[first].quantile(list(quantiles)), grid_points)
-    y_values = np.linspace(*frame[second].quantile(list(quantiles)), grid_points)
+    if value_range is None:
+        x_range = frame[first].quantile(list(quantiles))
+        y_range = frame[second].quantile(list(quantiles))
+    else:
+        x_range = y_range = value_range
+    x_values = np.linspace(*x_range, grid_points)
+    y_values = np.linspace(*y_range, grid_points)
     grid = pd.DataFrame(
         np.tile(base.to_numpy(dtype=float), (grid_points * grid_points, 1)),
         columns=frame.columns,
