@@ -464,6 +464,21 @@ class Container:
     def read_slots(self, slots: int | slice | list[int] | np.ndarray) -> np.ndarray:
         return self._feature_cache[slots]
     
+    def read_numpy(self) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Reads the valid samples, in order, as numpy arrays: their values (one row per sample, one
+        column per feature, in the order of feature_labels) and their timestamps. Much faster than
+        read(), which builds a new xarray object in every call. The arrays may share memory with the
+        container, so they are read-only.
+
+        :return: The values and the timestamps.
+        :rtype: tuple[numpy.ndarray, numpy.ndarray]
+        """
+        values, timestamps = self._read_ordered_numpy()
+        values.flags.writeable = False
+        timestamps.flags.writeable = False
+        return values, timestamps
+
     def _read_ordered_numpy(self):
         n = int(self._n_valid)
         if n == 0:
