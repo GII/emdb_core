@@ -6,6 +6,7 @@ from copy import deepcopy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.time import Time
+from rclpy.logging import LoggingSeverity
 
 from core.service_client import ServiceClientAsync
 from core.container import Container
@@ -533,7 +534,9 @@ class CognitiveNode(Node):
             if len(self.activation_inputs)==0: #Calculates activation when there are no inputs configured (Support for custom nodes)
                 updated=True
             else:
-                self.get_logger().debug(f'Activation Inputs: {str(self.activation_inputs)}')
+                # The text is built only if it is going to be logged: building it every period is expensive
+                if self.get_logger().is_enabled_for(LoggingSeverity.DEBUG):
+                    self.get_logger().debug(f'Activation Inputs: {str(self.activation_inputs)}')
                 updated= all((self.activation_inputs[node_name]['updated'] for node_name in self.activation_inputs))
 
             if updated:
