@@ -3,7 +3,6 @@ import os
 import yaml
 import threading
 
-from core.service_client import ServiceClient
 from core.container import Container
 from cognitive_nodes.episodic_buffer import EpisodicBuffer
 from cognitive_nodes.episode import container_msg_to_episode
@@ -226,7 +225,22 @@ class FileSpaceContent(File):
         super().write_header()
         self.file_object.write("Iteration\tIdent\t")
         self.header_finished = False
-        self.created_clients = {}
+
+    def _write_spaces(self, service_prefix, names):
+        """
+        Requests the spaces of several nodes at once, with clients of the process node (own_client
+        and call_services), and writes them in the order of names.
+
+        :param service_prefix: Prefix of the send_space services (e.g. "pnode").
+        :type service_prefix: str
+        :param names: Names of the nodes.
+        :type names: list
+        """
+        calls = [(self.node.own_client(SendSpace, f"{service_prefix}/{name}/send_space"), SendSpace.Request()) for name in names]
+        for name, response in zip(names, self.node.call_services(calls)):
+            space = Container.from_msg(response.space)
+            if space:
+                self._write_space_content(space, ident=name)
 
     def _write_space_content(self, space: Container, ident=""):
         labels = space.feature_labels if space else []
@@ -280,29 +294,10 @@ class FilePNodesContent(FileSpaceContent):
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
 
-    def create_pnode_client(self, pnode_name):
-        """
-        Create client to request P-Node's space.
-
-        :param pnode_name: Name of the P-Node.
-        :type pnode_name: str
-        """
-        if pnode_name not in self.created_clients:
-            pnode_client = ServiceClient(SendSpace, 'pnode/' + str(pnode_name) + '/send_space')
-            self.created_clients[pnode_name] = pnode_client
-
     def write(self):
-        """Writes P-Nodes contents."""    
+        """Writes P-Nodes contents. The spaces of all the P-Nodes are requested at once."""    
         if "PNode" in self.node.LTM_cache and self.write_needed():
-            for pnode in self.node.LTM_cache["PNode"]:
-                if pnode not in self.created_clients:
-                    self.create_pnode_client(pnode)
-
-                if self.created_clients[pnode]:
-                    response = self.created_clients[pnode].send_request()
-                    space = Container.from_msg(response.space)
-                    if space:
-                        self._write_space_content(space, ident=pnode)
+            self._write_spaces("pnode", list(self.node.LTM_cache["PNode"]))
 
 
 
@@ -323,29 +318,10 @@ class FileGoalsContent(FileSpaceContent):
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
 
-    def create_goal_client(self, goal_name):
-        """
-        Create client to request Goal's space.
-
-        :param goal_name: Name of the Goal.
-        :type goal_name: str
-        """
-        if goal_name not in self.created_clients:
-            goal_client = ServiceClient(SendSpace, 'goal/' + str(goal_name) + '/send_space')
-            self.created_clients[goal_name] = goal_client
-
-
     def write(self):
-        """Writes Goals contents.""" 
+        """Writes Goals contents. The spaces of all the Goals are requested at once.""" 
         if "Goal" in self.node.LTM_cache and self.write_needed():
-            for goal in self.node.LTM_cache["Goal"]:
-                if goal not in self.created_clients:
-                    self.create_goal_client(goal)
-                if self.created_clients[goal]:
-                    response = self.created_clients[goal].send_request()
-                    space = Container.from_msg(response.space)
-                    if space:
-                        self._write_space_content(space, ident=goal)
+            self._write_spaces("goal", list(self.node.LTM_cache["Goal"]))
     
 
 class FileLastIterationGoalsContent(FileGoalsContent):
@@ -422,12 +398,11 @@ class FileNeighbors(File):
         """Write the header of the file."""
         super().write_header()
         self._write_file("Goal\tNeighbor1\tNeighbor2\n")
-        self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
     
     def write(self):
         """Writes neighbors list."""        
         if self.node.iteration == self.node.iterations:
-            response = self.ltm_client.send_request(name="")
+            response = self.node.call_services([(self.node.own_client(GetNodeFromLTM, f'{self.node.LTM_id}/get_node'), GetNodeFromLTM.Request(name=""))])[0]
             nodes = yaml.safe_load(response.data)
             for goal in nodes['Goal']:
                 if 'reach' in goal or 'goal_' in goal:
@@ -444,12 +419,11 @@ class FileNeighborsFull(File):
         """Write the header of the file."""
         super().write_header()
         self._write_file("NodeType\tNodeName\tNeighborName\tNeighborType\n")
-        self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
     
     def write(self):
         """Writes one row per neighbor edge for every node type in the LTM.""" 
         if self.node.iteration == self.node.iterations:
-            response = self.ltm_client.send_request(name="")
+            response = self.node.call_services([(self.node.own_client(GetNodeFromLTM, f'{self.node.LTM_id}/get_node'), GetNodeFromLTM.Request(name=""))])[0]
             nodes = yaml.safe_load(response.data)
             for node_type, node_dict in nodes.items():
                 if not isinstance(node_dict, dict):
@@ -580,7 +554,6 @@ class FileSaveModels(File):
     def __init__(self, ident, file_name, node, save_interval=100, **params):
         super().__init__(ident, file_name, node, **params)
         self.folder_path = None
-        self.save_model_clients = {}
         self.save_interval = save_interval
         self.node_type_mapping = {
             "DeliberativeModel": "deliberative_model",
@@ -604,20 +577,20 @@ class FileSaveModels(File):
         self.file_object = folder_path_def
 
     def write(self):
-        # Trigger save models in all nodes in LTM cache
+        # Trigger save models in all nodes in LTM cache, all of them at once (each node saves its own model)
 
         write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
         if write_needed:
+            calls = []
             for node_type in self.node.LTM_cache:
                 if node_type in self.node_type_mapping:
                     service_prefix = self.node_type_mapping[node_type]
                     for node_name in self.node.LTM_cache[node_type]:
-                        if node_name not in self.save_model_clients:
-                            self.save_model_clients[node_name] = ServiceClient(
-                                SaveModel,
-                                f'{service_prefix}/{node_name}/save_model'
-                            )
-                        self.save_model_clients[node_name].send_request(prefix=f"{self.file_name}_{self.consecutive_index}/", suffix=f"_iter_{self.node.iteration}")
+                        calls.append((
+                            self.node.own_client(SaveModel, f'{service_prefix}/{node_name}/save_model'),
+                            SaveModel.Request(prefix=f"{self.file_name}_{self.consecutive_index}/", suffix=f"_iter_{self.node.iteration}"),
+                        ))
+            self.node.call_services(calls)
 
     def close(self):
         return None

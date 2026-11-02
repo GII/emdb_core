@@ -1,22 +1,49 @@
 import os
+import time
+import functools
 import rclpy
 import yaml
 import random
 import traceback
 import multiprocessing as mp
+from collections import deque
 
 from rclpy.node import Node
+from rclpy.task import Future
+from rclpy.executors import SingleThreadedExecutor
+try:
+    # Event-driven executor implemented in C++ (ROS 2 Jazzy and later).
+    from rclpy.experimental import EventsExecutor
+except ImportError:
+    EventsExecutor = None
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from core.config import saved_data_dir
 
 from std_msgs.msg import String
-from core.service_client import ServiceClient
-from core.execution_node import create_execution_node
+from core.execution_node import create_execution_node, EXECUTION_NODE_SERVICES, EXECUTION_NODE_READY_TOPIC, READY_CHECK_PERIOD, WAIT_WARNING_PERIOD
 from core.utils import resolve_seed, log_level_args
+from core.blocking_wait_check import register_executor_thread
 
 from core_interfaces.srv import AddExecutionNode, DeleteExecutionNode, MoveCognitiveNodeToExecutionNode
 from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode
 from core_interfaces.srv import SaveConfig, LoadConfig, StopExecution
+
+def serialized(callback):
+    """
+    Decorator for the async service callbacks of the commander: they are executed one at a
+    time, in arrival order, even while they await execution nodes. Executors do not ensure
+    it (the EventsExecutor ignores callback groups), and the callbacks share the commander
+    state (execution nodes and their cognitive nodes).
+    """
+    @functools.wraps(callback)
+    async def wrapper(self, request, response):
+        await self.wait_turn()
+        try:
+            return await callback(self, request, response)
+        finally:
+            self.end_turn()
+    return wrapper
+
 
 class CommanderNode(Node):
     """
@@ -42,7 +69,20 @@ class CommanderNode(Node):
         self.protected_executors = [] #List of executors that are exclusive to a node and cannot be used for load balancing
         self.cbgroup_client=MutuallyExclusiveCallbackGroup()
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
-        self.node_clients={}
+        self.service_turns = deque() # Futures of the serialized service callbacks, in arrival order (see serialized)
+
+        # Discovery handshake with the execution nodes (see check_execution_nodes)
+        self.execution_node_clients = {} # {id: {service: <rclpy.client.Client>, ...}, ...}
+        self.execution_node_ready = {} # {id: <rclpy.task.Future>}: done when the execution node can be used
+        self.execution_node_announced = set() # Ids received in the ready topic
+        self.execution_node_wait_start = {} # {id: time.monotonic() when it was launched}
+        self.next_ready_warning = 0
+        self.ready_subscription = self.create_subscription(
+            String, EXECUTION_NODE_READY_TOPIC, self.execution_node_ready_callback, 10,
+            callback_group=self.cbgroup_client
+        )
+        self.ready_check_timer = self.create_timer(READY_CHECK_PERIOD, self.check_execution_nodes, callback_group=self.cbgroup_client)
+        self.ready_check_timer.cancel()
         # Resolve the seed once at the top of the architecture: value 0 (the
         # default) means "no seed requested" and yields a fresh time-based seed,
         # so the run is genuinely random. The resolved, concrete seed is logged
@@ -81,7 +121,8 @@ class CommanderNode(Node):
             self.kill_commander, callback_group=self.cbgroup_server
         )
 
-    def load_config(self, request, response):
+    @serialized
+    async def load_config(self, request, response):
         """
         Loads a yaml file with the configuration of the execution nodes.
 
@@ -108,8 +149,10 @@ class CommanderNode(Node):
             
             ex_nodes=data['Commander']['ExecutionNode']
 
-            for node in ex_nodes:
-                self.add_execution_node(node['threads'])
+            # Launch all the execution nodes, then wait for all of them
+            new_ids = [self.add_execution_node(node['threads']) for node in ex_nodes]
+            for ex in new_ids:
+                await self.execution_node_ready[ex]
 
             self.configure_services()
 
@@ -226,6 +269,18 @@ class CommanderNode(Node):
         self.last_id += 1
         new_id = str(self.last_id)
 
+        # The clients exist before the process, so that the execution node can wait until it
+        # has discovered them before announcing that it is ready (see check_execution_nodes)
+        self.execution_node_clients[new_id] = {
+            service: self.create_client(srv_type, f'execution_node_{new_id}/{service}', callback_group=self.cbgroup_client)
+            for service, srv_type in EXECUTION_NODE_SERVICES.items()
+        }
+        self.execution_node_ready[new_id] = Future()
+        self.execution_node_wait_start[new_id] = time.monotonic()
+        if self.ready_check_timer.is_canceled():
+            self.next_ready_warning = time.monotonic() + WAIT_WARNING_PERIOD
+            self.ready_check_timer.reset()
+
         #Spawn child process with executor node
         # Execution nodes are new processes: forward the log levels given to the commander
         # (e.g. by the launch file) so that all the cognitive nodes respect them.
@@ -239,7 +294,93 @@ class CommanderNode(Node):
         
         return new_id
 
-    def delete_execution_node(self, request, response):
+    def execution_node_ready_callback(self, msg):
+        """
+        Receives the announcement of an execution node that has discovered the commander.
+
+        :param msg: Id of the execution node.
+        :type msg: std_msgs.msg.String
+        """
+        self.execution_node_announced.add(msg.data)
+
+    def check_execution_nodes(self):
+        """
+        Timer callback that marks as ready the execution nodes that the commander can use.
+
+        A service response is lost if the server sends it before it has discovered the
+        response reader of the client (rmw_fastrtps: "client will not receive response"),
+        and a request is lost if the client sends it before it has discovered the server.
+        An execution node can be used when it has announced that it has discovered the
+        commander (see ExecutionNode.check_commander_discovered) and all the commander
+        clients for it see its services. While waiting, it periodically logs the pending
+        execution nodes. The wait has no limit.
+        """
+        pending = [ex for ex, ready in self.execution_node_ready.items() if not ready.done()]
+        for ex in pending:
+            if ex in self.execution_node_announced and all(
+                client.service_is_ready() for client in self.execution_node_clients[ex].values()
+            ):
+                waited = time.monotonic() - self.execution_node_wait_start[ex]
+                self.get_logger().info(f"Execution node {ex} ready after {waited:.2f} s.")
+                self.execution_node_ready[ex].set_result(True)
+        pending = [ex for ex in pending if not self.execution_node_ready[ex].done()]
+        if not pending:
+            self.ready_check_timer.cancel()
+        elif time.monotonic() >= self.next_ready_warning:
+            for ex in pending:
+                waited = time.monotonic() - self.execution_node_wait_start[ex]
+                announced = ex in self.execution_node_announced
+                not_seen = [service for service, client in self.execution_node_clients[ex].items() if not client.service_is_ready()]
+                process = self.executors[ex]
+                if process.is_alive():
+                    self.get_logger().warning(
+                        f"Waiting for execution node {ex} for {waited:.1f} s "
+                        f"(announced: {announced}, services not seen: {not_seen or 'none'})."
+                    )
+                else:
+                    self.get_logger().error(
+                        f"Waiting for execution node {ex} for {waited:.1f} s, but its process "
+                        f"has finished (exit code {process.exitcode})."
+                    )
+            self.next_ready_warning += WAIT_WARNING_PERIOD
+
+    async def wait_turn(self):
+        """
+        Waits until the calling service callback can run (see serialized).
+        """
+        turn = Future()
+        self.service_turns.append(turn)
+        if len(self.service_turns) == 1:
+            turn.set_result(True)
+        await turn
+
+    def end_turn(self):
+        """
+        Lets the next service callback in arrival order run (see serialized).
+        """
+        self.service_turns.popleft()
+        if self.service_turns:
+            self.service_turns[0].set_result(True)
+
+    async def call_execution_node(self, executor_id, service, **fields):
+        """
+        Calls a service of an execution node, once it is ready (see check_execution_nodes).
+
+        :param executor_id: The ID of the executor.
+        :type executor_id: int
+        :param service: The service name, without the execution node prefix (e.g. 'create').
+        :type service: str
+        :param fields: Fields of the request.
+        :type fields: dict
+        :return: The response from the executor.
+        """
+        executor_id = str(executor_id)
+        await self.execution_node_ready[executor_id]
+        client = self.execution_node_clients[executor_id][service]
+        return await client.call_async(client.srv_type.Request(**fields))
+
+    @serialized
+    async def delete_execution_node(self, request, response):
         """
         Deletes an execution node and redistributes its cognitive nodes to other executors.
 
@@ -261,12 +402,12 @@ class CommanderNode(Node):
 
         # save all cognitive nodes
         self.get_logger().info(f"Saving all the nodes of the executor {ex_id}...")
-        saved = self.send_save_all_nodes_request_to_executor(ex_id)
+        saved = await self.send_save_all_nodes_request_to_executor(ex_id)
 
         if saved:
             # delete the execution node
             self.get_logger().info(f'Deleting executor: {ex_id}...')
-            self.send_stop_request_to_executor(ex_id)
+            await self.send_stop_request_to_executor(ex_id)
             del self.nodes[ex_id]
             #del self.executor_ids.remove(ex_id) #TODO: Handle killing the process
 
@@ -292,7 +433,7 @@ class CommanderNode(Node):
 
                         ex = self.get_lowest_load_executor()
 
-                        executor_response = self.send_load_request_to_executor(ex, node_name, node_file_path)
+                        executor_response = await self.send_load_request_to_executor(ex, node_name, node_file_path)
 
                         self.register_node(ex, node_name)
 
@@ -307,7 +448,8 @@ class CommanderNode(Node):
         
         return response
     
-    def move_cognitive_node_to(self, request, response):
+    @serialized
+    async def move_cognitive_node_to(self, request, response):
         """
         Moves a cognitive node from its current executor to a specified executor.
 
@@ -334,15 +476,15 @@ class CommanderNode(Node):
 
             # save node data
 
-            self.send_save_request_to_executor(current_ex_id, node_name)
+            await self.send_save_request_to_executor(current_ex_id, node_name)
             
             # remove node from current executor
-            self.send_delete_request_to_executor(current_ex_id, node_name)
+            await self.send_delete_request_to_executor(current_ex_id, node_name)
 
             # load node in new executor
             file_path = os.path.join(saved_data_dir, node_name + '.yaml')
 
-            self.send_load_request_to_executor(ex_id, node_name, file_path)
+            await self.send_load_request_to_executor(ex_id, node_name, file_path)
 
             self.get_logger().info(f"Node {node_name} moved to executor {ex_id}.")
             response.moved = True
@@ -356,7 +498,8 @@ class CommanderNode(Node):
         return response
 
     
-    def create_node(self, request, response):
+    @serialized
+    async def create_node(self, request, response):
         """
         Handle the creation of a cognitive node.
 
@@ -393,7 +536,7 @@ class CommanderNode(Node):
            
             ex = self.get_lowest_load_executor()
             
-            executor_response = self.send_create_request_to_executor(ex, name, class_name, yaml_parameters)
+            executor_response = await self.send_create_request_to_executor(ex, name, class_name, yaml_parameters)
             
             self.register_node(ex, name)
             
@@ -402,7 +545,8 @@ class CommanderNode(Node):
             response = executor_response
         return response
 
-    def read_node(self, request, response):
+    @serialized
+    async def read_node(self, request, response):
         """
         Handle reading data from a cognitive node.
 
@@ -432,7 +576,7 @@ class CommanderNode(Node):
         else:
             ex = self.get_executor_for_node(name)
 
-            executor_response = self.send_read_request_to_executor(ex, name)
+            executor_response = await self.send_read_request_to_executor(ex, name)
 
             node_data = yaml.load(executor_response.data, Loader=yaml.FullLoader)
 
@@ -441,7 +585,8 @@ class CommanderNode(Node):
             response = executor_response
         return response
 
-    def delete_node(self, request, response):
+    @serialized
+    async def delete_node(self, request, response):
         """
         Handle the deletion of a cognitive node.
 
@@ -469,7 +614,7 @@ class CommanderNode(Node):
         else:
             ex = self.get_executor_for_node(name)
 
-            executor_response = self.send_delete_request_to_executor(ex, name)
+            executor_response = await self.send_delete_request_to_executor(ex, name)
           
             self.remove_node_from_executor(ex, name)
             self.get_logger().info(f"Node {name} deleted from executor {ex}")
@@ -478,7 +623,8 @@ class CommanderNode(Node):
 
         return response
 
-    def save_node(self, request, response):
+    @serialized
+    async def save_node(self, request, response):
         """
         Handle saving the state of a cognitive node.
 
@@ -503,7 +649,7 @@ class CommanderNode(Node):
         else:
             ex = self.get_executor_for_node(name)
 
-            executor_response = self.send_save_request_to_executor(ex, name)
+            executor_response = await self.send_save_request_to_executor(ex, name)
             if executor_response.saved:
                 self.get_logger().info(f'Node {name} saved.')
 
@@ -511,7 +657,8 @@ class CommanderNode(Node):
 
         return response
 
-    def load_node(self, request, response):
+    @serialized
+    async def load_node(self, request, response):
         """
         Handle loading a cognitive node from a configuration.
 
@@ -540,7 +687,7 @@ class CommanderNode(Node):
             
             ex = self.get_lowest_load_executor()
             
-            executor_response = self.send_load_request_to_executor(ex, name, file_path)
+            executor_response = await self.send_load_request_to_executor(ex, name, file_path)
             
             self.register_node(ex, name)
             
@@ -551,7 +698,8 @@ class CommanderNode(Node):
                     
         return response
     
-    def load_experiment(self, request, response):
+    @serialized
+    async def load_experiment(self, request, response):
         """
         Load an experiment from a file.
 
@@ -610,7 +758,7 @@ class CommanderNode(Node):
                         else:
                             ex = self.get_lowest_load_executor()
                         
-                        executor_response = self.send_create_request_to_executor(ex, name, class_name, parameters)
+                        executor_response = await self.send_create_request_to_executor(ex, name, class_name, parameters)
                         
                         self.register_node(ex, name)
                         
@@ -638,7 +786,7 @@ class CommanderNode(Node):
                 else:
                     ex = self.get_lowest_load_executor()
 
-                executor_response= self.send_create_request_to_executor(ex, name, class_name, parameters)
+                executor_response= await self.send_create_request_to_executor(ex, name, class_name, parameters)
                 self.register_node(ex, name)
                 self.get_logger().info(f'Process {name} created in executor {ex}.')
 
@@ -646,7 +794,8 @@ class CommanderNode(Node):
                    
         return response
       
-    def save_config(self, request, response):
+    @serialized
+    async def save_config(self, request, response):
         """
         Saves the state of the system to a YAML file.
 
@@ -679,7 +828,7 @@ class CommanderNode(Node):
 
         for ex in self.executors:
             self.get_logger().info(f'Reading data from execution node {ex}')
-            executor_response = self.send_read_all_nodes_request_to_executor(ex)
+            executor_response = await self.send_read_all_nodes_request_to_executor(ex)
             self.get_logger().info(f'Data from execution node {ex} read.')
 
             node_list.extend(yaml.load(executor_response.data, Loader=yaml.FullLoader))
@@ -694,7 +843,8 @@ class CommanderNode(Node):
 
         return response
 
-    def stop_execution(self, request, response):
+    @serialized
+    async def stop_execution(self, request, response):
         """
         Stop the execution of all execution nodes in the system.
 
@@ -713,7 +863,7 @@ class CommanderNode(Node):
         self.get_logger().info(f'Stopping execution...')
 
         for ex in self.executors:
-            executor_response = self.send_stop_request_to_executor(ex)
+            executor_response = await self.send_stop_request_to_executor(ex)
             self.nodes[ex] = []
             stop_msg = String()
             stop_msg.data = str(ex)
@@ -791,7 +941,7 @@ class CommanderNode(Node):
         executor_id = str(executor_id)
         self.nodes[executor_id].remove(node_name)
 
-    def send_create_request_to_executor(self, executor_id, name, class_name, parameters):
+    async def send_create_request_to_executor(self, executor_id, name, class_name, parameters):
         """
         Send a 'create' request to an executor.
 
@@ -806,13 +956,9 @@ class CommanderNode(Node):
         :return: The response from the executor.
         :rtype: core_interfaces.srv.CreateNode.Response
         """
-        service_name = 'execution_node_' + str(executor_id) + '/create'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(CreateNode, service_name)
-        executor_response = self.node_clients[service_name].send_request(name=name, class_name=class_name, parameters=parameters)
-        return executor_response
+        return await self.call_execution_node(executor_id, 'create', name=name, class_name=class_name, parameters=parameters)
 
-    def send_read_request_to_executor(self, executor_id, name):
+    async def send_read_request_to_executor(self, executor_id, name):
         """
         Send a 'read' request to an executor.
 
@@ -823,13 +969,9 @@ class CommanderNode(Node):
         :return: The response from the executor.
         :rtype: core_interfaces.srv.ReadNode.Response
         """
-        service_name = 'execution_node_' + str(executor_id) + '/read'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(ReadNode, service_name)
-        executor_response = self.node_clients[service_name].send_request(name=name)
-        return executor_response
+        return await self.call_execution_node(executor_id, 'read', name=name)
 
-    def send_delete_request_to_executor(self, executor_id, name):
+    async def send_delete_request_to_executor(self, executor_id, name):
         """
         Send a 'delete' request to an executor.
 
@@ -842,13 +984,9 @@ class CommanderNode(Node):
         :return: The response from the executor.
         :rtype: core_interfaces.srv.DeleteNode.Response
         """
-        service_name = 'execution_node_' + str(executor_id) + '/delete'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(DeleteNode, service_name)
-        executor_response = self.node_clients[service_name].send_request(name=name)
-        return executor_response
+        return await self.call_execution_node(executor_id, 'delete', name=name)
 
-    def send_save_request_to_executor(self, executor_id, name):
+    async def send_save_request_to_executor(self, executor_id, name):
         """
         Send a 'save' request to an executor.
 
@@ -859,13 +997,9 @@ class CommanderNode(Node):
         :return: The response from the executor.
         :rtype: core_interfaces.srv.SaveNode.Response
         """
-        service_name = 'execution_node_' + str(executor_id) + '/save'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(SaveNode, service_name)
-        executor_response = self.node_clients[service_name].send_request(name=name)
-        return executor_response
+        return await self.call_execution_node(executor_id, 'save', name=name)
 
-    def send_load_request_to_executor(self, executor_id, name, file_path):
+    async def send_load_request_to_executor(self, executor_id, name, file_path):
         """
         Send a 'load' request to an executor.
 
@@ -878,13 +1012,9 @@ class CommanderNode(Node):
         :return: The response from the executor.
         :rtype: core_interfaces.srv.LoadNode.Response
         """
-        service_name = 'execution_node_' + str(executor_id) + '/load'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(LoadNode, service_name)
-        executor_response = self.node_clients.send_request(name=name, file=file_path)
-        return executor_response
+        return await self.call_execution_node(executor_id, 'load', name=name, file=file_path)
 
-    def send_read_all_nodes_request_to_executor(self, executor_id):
+    async def send_read_all_nodes_request_to_executor(self, executor_id):
         """
         Send a request to read data from all cognitive nodes in a specific execution node.
         :param executor_id: The ID of the executor.
@@ -892,13 +1022,9 @@ class CommanderNode(Node):
         :return: The response containing data from all cognitive nodes.
         :rtype: core_interfaces.srv.ReadNode.Response
         """
-        service_name = 'execution_node_' + str(executor_id) + '/read_all_nodes'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(ReadNode, service_name)
-        executor_response = self.node_clients[service_name].send_request()
-        return executor_response
+        return await self.call_execution_node(executor_id, 'read_all_nodes')
     
-    def send_save_all_nodes_request_to_executor(self, executor_id):
+    async def send_save_all_nodes_request_to_executor(self, executor_id):
         """
         Send a request to save the state of all cognitive nodes in a specific execution node.
 
@@ -906,14 +1032,10 @@ class CommanderNode(Node):
         :type executor_id: int
         :return: The response indicating the success of saving all cognitive nodes.
         :rtype: core_interfaces.srv.SaveNode.Response
-        """        
-        service_name = 'execution_node_' + str(executor_id) + '/save_all_nodes'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(SaveNode, service_name)
-        executor_response = self.node_clients[service_name].send_request()
-        return executor_response 
+        """
+        return await self.call_execution_node(executor_id, 'save_all_nodes')
        
-    def send_stop_request_to_executor(self, executor_id):
+    async def send_stop_request_to_executor(self, executor_id):
         """
         Send a request to stop the execution of all cognitive nodes in a specific execution node.
 
@@ -921,12 +1043,8 @@ class CommanderNode(Node):
         :type executor_id: int
         :return: The response indicating the success of stopping the execution.
         :rtype: core_interfaces.srv.StopExecution.Response
-        """        
-        service_name = 'execution_node_' + str(executor_id) + '/stop_execution'
-        if service_name not in self.node_clients:
-            self.node_clients[service_name] = ServiceClient(StopExecution, service_name)
-        executor_response = self.node_clients[service_name].send_request()
-        return executor_response
+        """
+        return await self.call_execution_node(executor_id, 'stop_execution')
     
     def kill_commander(self, request, response):
         """
@@ -960,9 +1078,17 @@ def main(args=None):
     mp.set_start_method('forkserver')
     
     commander = CommanderNode()
+    if EventsExecutor is not None:
+        # Much cheaper than the Python executors, and it supports coroutine callbacks
+        # (ROS 2 Jazzy and later). It ignores callback groups: see serialized.
+        executor = EventsExecutor()
+    else:
+        executor = SingleThreadedExecutor()
+    executor.add_node(commander)
 
+    register_executor_thread() # The callbacks of the EventsExecutor are not visible in the Python stack
     try:
-        rclpy.spin(commander)
+        executor.spin()
 
     except KeyboardInterrupt:
         print('Keyboard Interrupt Detected: Shutting down execution nodes...')

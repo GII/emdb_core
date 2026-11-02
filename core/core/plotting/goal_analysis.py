@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import pandas as pd
+
+from core.plotting.result_loader import ExperimentResults
 
 
 _REQUIRED_COLUMNS = {"Iteration", "World", "Goal reward list"}
@@ -14,7 +16,11 @@ _OUTPUT_COLUMNS = ["goal", "domain", "iteration", "achieved"]
 _CUMULATIVE_COLUMN = "cumulative_achievements"
 
 
-def _load_goodness(source: str | Path | pd.DataFrame) -> pd.DataFrame:
+def _load_goodness(
+    source: ExperimentResults | str | Path | pd.DataFrame,
+) -> pd.DataFrame:
+    if isinstance(source, ExperimentResults):
+        return source.table("goodness").copy()
     if isinstance(source, pd.DataFrame):
         return source.copy()
 
@@ -59,9 +65,10 @@ def _parse_goal_rewards(value: Any, row_number: int) -> dict[str, Any]:
 
 
 def goal_achievement_table(
-    source: str | Path | pd.DataFrame,
+    source: ExperimentResults | str | Path | pd.DataFrame,
     *,
     tally_by_domain: bool = False,
+    exclude_goals: Iterable[str] | None = None,
 ) -> pd.DataFrame:
     """Return one event row for every goal occurrence.
 
@@ -75,10 +82,14 @@ def goal_achievement_table(
     contains the raw iteration values from the input. A DataFrame returned by
     this function can be passed back in as ``source``.
     """
+    excluded = {str(goal) for goal in (exclude_goals or ())}
+
     if isinstance(source, pd.DataFrame) and set(_OUTPUT_COLUMNS).issubset(
         source.columns
     ):
         result = source.copy()
+        if excluded:
+            result = result[~result["goal"].astype(str).isin(excluded)]
         if tally_by_domain and "effective_iteration" not in result:
             result["effective_iteration"] = (
                 result.groupby("domain", sort=False).cumcount() + 1
@@ -102,6 +113,8 @@ def goal_achievement_table(
         domain_iterations[domain] = domain_iterations.get(domain, 0) + 1
         rewards = _parse_goal_rewards(row["Goal reward list"], row_number)
         for goal, reward in rewards.items():
+            if str(goal) in excluded:
+                continue
             try:
                 achieved = float(reward) == 1.0
             except (TypeError, ValueError) as error:
@@ -122,9 +135,10 @@ def goal_achievement_table(
 
 
 def cumulative_goal_achievement_table(
-    source: str | Path | pd.DataFrame,
+    source: ExperimentResults | str | Path | pd.DataFrame,
     *,
     tally_by_domain: bool = False,
+    exclude_goals: Iterable[str] | None = None,
 ) -> pd.DataFrame:
     """Return a cumulative goal-achievement time series.
 
@@ -136,6 +150,7 @@ def cumulative_goal_achievement_table(
     achievements = goal_achievement_table(
         source,
         tally_by_domain=tally_by_domain,
+        exclude_goals=exclude_goals,
     )
     x_column = "effective_iteration" if tally_by_domain else "iteration"
     columns = ["goal", x_column, _CUMULATIVE_COLUMN]
@@ -158,4 +173,83 @@ def cumulative_goal_achievement_table(
     return counts[columns]
 
 
+def goal_discovery_table(
+    source: ExperimentResults | str | Path | pd.DataFrame,
+    *,
+    exclude_goals: Iterable[str] | None = None,
+) -> pd.DataFrame:
+    """Return the first iteration in which each goal is observed.
+
+    A goal is considered discovered when it appears in the goodness reward
+    dictionary, regardless of whether its reward is zero or one. Discovery is
+    global for each goal; the domain column records where it was first seen.
+    """
+    achievements = goal_achievement_table(
+        source,
+        exclude_goals=exclude_goals,
+    )
+    if achievements.empty:
+        return pd.DataFrame(columns=["goal", "domain", "iteration"])
+    discoveries = (
+        achievements.sort_values("iteration", kind="stable")
+        .drop_duplicates("goal", keep="first")
+        [["goal", "domain", "iteration"]]
+        .reset_index(drop=True)
+    )
+    return discoveries
+
+
+def cumulative_goal_discovery_table(
+    source: ExperimentResults | str | Path | pd.DataFrame,
+    *,
+    by_domain: bool = False,
+    exclude_goals: Iterable[str] | None = None,
+) -> pd.DataFrame:
+    """Return cumulative counts of newly observed goals by iteration.
+
+    With ``by_domain=False``, each goal is counted once across the experiment.
+    With ``by_domain=True``, a goal is counted once independently for every
+    domain where it is observed.
+    """
+    achievements = goal_achievement_table(
+        source,
+        exclude_goals=exclude_goals,
+    )
+    columns = [
+        "iteration",
+        "goals_discovered",
+        "cumulative_goals_discovered",
+    ]
+    group_columns: list[str] = []
+    if by_domain:
+        columns.insert(1, "domain")
+        group_columns = ["domain"]
+    if achievements.empty:
+        return pd.DataFrame(columns=columns)
+
+    keys = group_columns + ["goal"]
+    discoveries = (
+        achievements.sort_values("iteration", kind="stable")
+        .drop_duplicates(keys, keep="first")
+    )
+    counts = (
+        discoveries.groupby(group_columns + ["iteration"], sort=True)
+        ["goal"]
+        .nunique()
+        .rename("goals_discovered")
+        .reset_index()
+    )
+    sort_columns = group_columns + ["iteration"]
+    counts = counts.sort_values(sort_columns, kind="stable")
+    if group_columns:
+        counts["cumulative_goals_discovered"] = counts.groupby(
+            group_columns,
+            sort=False,
+        )["goals_discovered"].cumsum()
+    else:
+        counts["cumulative_goals_discovered"] = counts["goals_discovered"].cumsum()
+    return counts[columns]
+
+
 analyze_goal_achievements = goal_achievement_table
+analyze_goal_discoveries = goal_discovery_table
