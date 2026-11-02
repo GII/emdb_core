@@ -1,7 +1,8 @@
 import random
+import time
 import rclpy
 from rclpy.node import Node
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.task import Future
 from core.blocking_wait_check import check_blocking_wait
@@ -48,9 +49,13 @@ class ServiceClient(Node):
         self.se.spin_until_future_complete(self.future)
         return self.future.result()
     
+SERVICE_CHECK_PERIOD = 0.01  # Seconds between checks while an asynchronous client waits for its service
+SERVICE_WAIT_WARNING_PERIOD = 5.0  # Seconds between warnings while an asynchronous client waits for its service
+
+
 class ServiceClientAsync():
     """
-    A generic service client class.
+    A generic service client class for callbacks (coroutines): nothing waits blocked.
     """
     def __init__(self, node:Node, service_type, service_name, callback_group) -> None:
         """
@@ -66,24 +71,60 @@ class ServiceClientAsync():
         :type callback_group: rclpy.callback_groups.*
         """        
         self.node=node
+        self.service_name = service_name
         self.cli = self.node.create_client(service_type, service_name, callback_group=callback_group)
-        while not self.cli.wait_for_service(timeout_sec=1.0):
-            self.node.get_logger().info(f'Service {service_name} not available, waiting again...')
         self.req = service_type.Request()
+        # The timers of wait_for_service_async must run while the callback that waits is suspended, also with the
+        # Python executors, which keep the callback group of a suspended callback busy
+        self.wait_callback_group = ReentrantCallbackGroup()
 
-    def send_request_async(self, **kwargs) -> Future:
+    async def wait_for_service_async(self):
         """
-        Send a request to the service using asyncio.
+        Waits until the client sees its service, with no time limit. It doesn't block the executor: between checks,
+        the callback that waits is suspended and the executor runs other callbacks (e.g. the one that creates the node
+        that provides the service). While waiting, it periodically logs a warning.
+        """
+        start = time.monotonic()
+        next_warning = start + SERVICE_WAIT_WARNING_PERIOD
+        while not self.cli.service_is_ready():
+            await self._sleep(SERVICE_CHECK_PERIOD)
+            if time.monotonic() >= next_warning:
+                self.node.get_logger().warning(f"Waiting for the service {self.service_name} for {time.monotonic() - start:.1f} s")
+                next_warning += SERVICE_WAIT_WARNING_PERIOD
+
+    async def _sleep(self, seconds):
+        """
+        Suspends the calling coroutine for some seconds, without blocking the executor (one-shot timer).
+
+        :param seconds: Time to wait.
+        :type seconds: float
+        """
+        done = Future()
+
+        def wake():
+            timer.cancel()
+            self.node.destroy_timer(timer)
+            done.set_result(True)
+
+        timer = self.node.create_timer(seconds, wake, callback_group=self.wait_callback_group)
+        await done
+
+    async def send_request_async(self, **kwargs):
+        """
+        Send a request to the service and wait for the response (coroutine, to be awaited). The first time, it waits
+        until the client sees the service (see wait_for_service_async).
 
         :param kwargs: Keyword arguments representing the request parameters.
         :type kwargs: dict
         :return: The response from the service.
         :rtype: service_type.Response
         """        
+        if not self.cli.service_is_ready():
+            await self.wait_for_service_async()
         for key, value in kwargs.items():
             setattr(self.req, key, value)
         self.future = self.cli.call_async(self.req)
-        return self.future
+        return await self.future
 
 def main():
     rclpy.init()
