@@ -615,9 +615,12 @@ class CommanderNode(Node):
             ex = self.get_executor_for_node(name)
 
             executor_response = await self.send_delete_request_to_executor(ex, name)
-          
-            self.remove_node_from_executor(ex, name)
-            self.get_logger().info(f"Node {name} deleted from executor {ex}")
+
+            if executor_response.deleted:
+                self.remove_node_from_executor(ex, name)
+                self.get_logger().info(f"Node {name} deleted from executor {ex}")
+            else:
+                self.get_logger().error(f"Executor {ex} could not delete the node {name}")
 
             response = executor_response
 

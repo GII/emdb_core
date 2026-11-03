@@ -215,25 +215,6 @@ class CognitiveNode(Node):
 
         return node_data
     
-    async def register_in_LTM(self, data_dic):
-        """
-        Requests registering the node in the LTM.
-
-        :param data_dic: A dictionary with the data to be saved.
-        :type data_dic: dict
-        :return: A future that will contain the response from the LTM service.
-        :rtype: rclpy.task.Future
-        """
-        self._ensure_ltm_clients()
-        self.get_logger().debug(f'DEBUG START Registering {self.node_type} {self.name} in LTM...')
-
-        ltm_response = self.add_node_to_LTM_client.send_request_async(name=self.name, node_type=self.node_type, data=self.ltm_registration_data(data_dic))
-        result = await ltm_response
-        self.apply_neighbors(neighbors_from_lists(result.neighbors_name, result.neighbors_type))
-        self.get_logger().debug(f'DEBUG FINISH Registering {self.node_type} {self.name} in LTM...')
-
-        return ltm_response
-
     def ltm_registration_data(self, data_dic=None):
         """
         Data sent to the LTM when the node is registered in it.
@@ -260,14 +241,17 @@ class CognitiveNode(Node):
             request = AddNeighbor.Request(neighbor_name=neighbor['name'], neighbor_type=neighbor['node_type'])
             self.add_neighbor_callback(request, AddNeighbor.Response())
     
-    def remove_from_LTM(self):
+    async def remove_from_LTM(self):
         """
-        Removes the node from the LTM. 
+        Removes the node from the LTM (coroutine, to be awaited). The node must be spinning, since the
+        response arrives through its executor. Execution nodes delete their nodes with their own client
+        instead (see ExecutionNode.unregister_from_ltm).
+
         :return: True if the operation was succesful, False otherwise.
-        :rtype: core_interfaces.srv.DeleteNodeFromLTM.Response
+        :rtype: bool
         """
         self._ensure_ltm_clients()
-        ltm_response = self.delete_node_client.send_request_async(name=self.name)
+        ltm_response = await self.delete_node_client.send_request_async(name=self.name)
         return ltm_response.deleted
    
     def calculate_activation(self, perception, activation_list):

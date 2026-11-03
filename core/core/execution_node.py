@@ -24,7 +24,7 @@ from core.service_client import ServiceClient
 
 from std_msgs.msg import String
 from core_interfaces.srv import AddExecutionNode
-from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution, AddNodeToLTM
+from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution, AddNodeToLTM, DeleteNodeFromLTM
 from core.service_client import ServiceClient, ServiceClientAsync
 from core.blocking_wait_check import register_executor_thread
 
@@ -220,7 +220,7 @@ class ExecutionNode(Node):
         # Cognitive nodes are registered in the LTM and receive the neighbors it assigns (e.g. their
         # perceptions) before they are added to the executor: a node never works with a partially
         # defined set of neighbors.
-        if callable(getattr(new_node, 'ltm_registration_data', None)):
+        if self.registered_in_ltm(new_node):
             await self.register_in_ltm(new_node)
 
         self.executor.add_node(new_node)
@@ -228,6 +228,18 @@ class ExecutionNode(Node):
         self.get_logger().info(f'Added node: {name}.')
         response.created = True
         return response
+
+    @staticmethod
+    def registered_in_ltm(node):
+        """
+        Tells whether a node is registered in the LTM: cognitive nodes are, cognitive processes are not.
+
+        :param node: The node.
+        :type node: rclpy.node.Node
+        :return: True if the node is registered in the LTM.
+        :rtype: bool
+        """
+        return callable(getattr(node, 'ltm_registration_data', None))
 
     async def register_in_ltm(self, node):
         """
@@ -245,6 +257,26 @@ class ExecutionNode(Node):
             name=node.name, node_type=node.node_type, data=node.ltm_registration_data()
         )
         node.apply_neighbors(neighbors_from_lists(response.neighbors_name, response.neighbors_type))
+
+    async def unregister_from_ltm(self, node):
+        """
+        Removes a cognitive node from its LTM.
+
+        The node may have been removed from the executor already, so the request is sent through a
+        client of the execution node, like in register_in_ltm.
+
+        :param node: The cognitive node.
+        :type node: core.cognitive_node.CognitiveNode
+        :return: True if the LTM deleted the node.
+        :rtype: bool
+        """
+        service_name = f"{node.LTM_id}/delete_node"
+        if service_name not in self.ltm_clients:
+            self.ltm_clients[service_name] = ServiceClientAsync(self, DeleteNodeFromLTM, service_name, self.cbgroup_client)
+        response = await self.ltm_clients[service_name].send_request_async(name=node.name)
+        if not response.deleted:
+            self.get_logger().warning(f'The LTM did not delete the node {node.name}.')
+        return response.deleted
 
     def read_node(self, request, response):
         """
@@ -271,7 +303,7 @@ class ExecutionNode(Node):
 
         return response
 
-    def delete_node(self, request, response):
+    async def delete_node(self, request, response):
         """
         Delete a cognitive node by its name.
 
@@ -286,10 +318,15 @@ class ExecutionNode(Node):
 
         self.get_logger().info(f'Deleting node: {name}...')
 
-        if name in self.nodes:
+        if name in self.nodes and not self.registered_in_ltm(self.nodes[name]):
+            # Destroying a cognitive process here would wait for its loop thread, which may be waiting for
+            # responses that only this executor can deliver (see MainLoop.destroy_node)
+            self.get_logger().error(f'{name} is a cognitive process: it cannot be deleted, stop the execution instead.')
+            response.deleted = False
+        elif name in self.nodes:
             node_to_delete = self.nodes.pop(name)
             self.executor.remove_node(node_to_delete)
-            node_to_delete.remove_from_LTM()
+            await self.unregister_from_ltm(node_to_delete)
             node_to_delete.destroy_node()
             self.get_logger().info(f'Deleted node: {name}.')
             response.deleted = True
@@ -434,7 +471,7 @@ class ExecutionNode(Node):
         return response
 
 
-    def stop_execution(self, request, response):
+    async def stop_execution(self, request, response):
         """
         Stop the execution of all cognitive nodes in this execution node.
 
@@ -449,9 +486,18 @@ class ExecutionNode(Node):
         self.get_logger().info(f'Stopping execution of every cognitive nodes in execution node {self.id}')
 
         for name in list(self.nodes.keys()):
-            node_to_delete = self.nodes.pop(name)
-            node_to_delete.remove_from_LTM()
-            node_to_delete.destroy_node()
+            node = self.nodes[name]
+            if not self.registered_in_ltm(node):
+                # Cognitive processes are only asked to stop. They are destroyed when the execution node
+                # shuts down (see create_execution_node), outside the callbacks: destroying them here would
+                # wait for their loop thread (see MainLoop.destroy_node)
+                node.stop = True
+                self.get_logger().info(f'Asked the process {name} to stop.')
+                continue
+            del self.nodes[name]
+            self.executor.remove_node(node)
+            await self.unregister_from_ltm(node)
+            node.destroy_node()
             self.get_logger().info(f'Stopped execution of node: {name}.')
 
         return response
