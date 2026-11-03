@@ -2,6 +2,7 @@ from rclpy.time import Time
 import os
 import yaml
 import threading
+from collections import deque
 
 from core.container import Container
 from cognitive_nodes.episodic_buffer import EpisodicBuffer
@@ -154,18 +155,49 @@ class FileTrialsSuccess(File):
         self.node.trials_data = []
 
 
-class FilePNodesConfidence(File):
-    """A time series of P-Node rolling confidence and goal-link status."""
+class FileFromTopics(File):
+    """
+    A file whose rows come from topic callbacks. Only the loop thread writes the files: the
+    callbacks just queue the rows, which the loop thread writes in write and close.
+    """
 
     def __init__(self, ident, file_name, node, **params):
         super().__init__(ident, file_name, node, **params)
         self.subscriptions = {}
+        self.pending_rows = deque()  # Rows received and not written yet (deque: thread safe appends and pops)
+
+    def queue_row(self, row):
+        """
+        Queues a row to be written by the loop thread. To be called from the callbacks.
+
+        :param row: The row, with its line ending.
+        :type row: str
+        """
+        self.pending_rows.append(row)
+
+    def write_pending_rows(self):
+        """Writes the queued rows, in the order they were received."""
+        while self.pending_rows:
+            self._write_file(self.pending_rows.popleft())
+
+    def write(self):
+        self.write_pending_rows()
+
+    def close(self):
+        """Writes the queued rows and closes the file. Rows received later are discarded."""
+        self.write_pending_rows()
+        super().close()
+
+
+class FilePNodesConfidence(FileFromTopics):
+    """A time series of P-Node rolling confidence and goal-link status."""
 
     def write_header(self):
         super().write_header()
         self._write_file("Iteration\tPNode\tConfidence\tGoalLinked\n")
 
     def write(self):
+        super().write()
         pnodes = self.node.LTM_cache.get("PNode", {})
         for pnode_name in pnodes:
             if pnode_name not in self.subscriptions:
@@ -178,7 +210,7 @@ class FilePNodesConfidence(File):
                 )
 
     def success_rate_callback(self, msg):
-        self._write_file(
+        self.queue_row(
             f"{self.node.iteration}\t{msg.node_name}\t"
             f"{msg.success_rate:.6f}\t{int(msg.flag)}\n"
         )
@@ -513,11 +545,8 @@ class FileDrivesPerceptions(File):
         )
 
 
-class FileWorldModelSuccess(File):
+class FileWorldModelSuccess(FileFromTopics):
     """A file that records the success of the world model predictions."""
-    def __init__(self, ident, file_name, node, **params):
-        super().__init__(ident, file_name, node, **params)
-        self.subscriptions = {}
 
     def write_header(self):
         super().write_header()
@@ -526,6 +555,7 @@ class FileWorldModelSuccess(File):
         )
 
     def write(self):
+        super().write()
         # Check world model nodes in LTM cache
         world_models = self.node.LTM_cache.get("WorldModel", {})
         for wm_name in world_models:
@@ -539,7 +569,7 @@ class FileWorldModelSuccess(File):
                 )
 
     def success_rate_callback(self, msg):
-        self._write_file(
+        self.queue_row(
             str(self.node.iteration)
             + "\t"
             + msg.node_name
