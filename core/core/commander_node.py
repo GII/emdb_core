@@ -10,7 +10,7 @@ from collections import deque
 
 from rclpy.node import Node
 from rclpy.task import Future
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor, ExternalShutdownException
 try:
     # Event-driven executor implemented in C++ (ROS 2 Jazzy and later).
     from rclpy.experimental import EventsExecutor
@@ -724,8 +724,9 @@ class CommanderNode(Node):
 
         if not os.path.exists(experiment_file):
 
-            self.get_logger().info(f"Couldn't load experiment. File {experiment_file} not found")
+            self.get_logger().fatal(f"Couldn't load experiment. File {experiment_file} not found. Aborting the experiment.")
             response.loaded = False
+            self.executor.create_task(self.abort_experiment)
         
         else:
             
@@ -739,6 +740,7 @@ class CommanderNode(Node):
                 self.global_params['Control'] = data['Control']
             if data['LTM'].get('Connectors'):
                 self.global_params['Connectors'] = data['LTM']['Connectors']
+            failed = [] # Nodes that could not be created: the experiment would not run as configured
             for class_name, node_list in nodes.items():
                 for node in node_list:
                     name = node['name']
@@ -762,10 +764,20 @@ class CommanderNode(Node):
                             ex = self.get_lowest_load_executor()
                         
                         executor_response = await self.send_create_request_to_executor(ex, name, class_name, parameters)
-                        
-                        self.register_node(ex, name)
-                        
-                        self.get_logger().info(f'Node {name} created in executor {ex}.')
+
+                        if executor_response.created:
+                            self.register_node(ex, name)
+                            self.get_logger().info(f'Node {name} created in executor {ex}.')
+                        else:
+                            # The execution node logs the cause. The rest of the nodes are still created, to report all the failures
+                            self.get_logger().error(f'Could not create {class_name} {name} in executor {ex}.')
+                            failed.append(name)
+
+            if failed:
+                self.get_logger().fatal(f"Experiment not loaded, {len(failed)} node(s) could not be created: {', '.join(failed)}. Aborting the experiment.")
+                response.loaded = False
+                self.executor.create_task(self.abort_experiment)
+                return response
 
             if data.get('Experiment'):
                 experiment_data=data['Experiment']
@@ -774,10 +786,10 @@ class CommanderNode(Node):
                 params_dict={}
                 if experiment_data.get('parameters'):
                     params_dict=experiment_data['parameters']
-                    params_dict['LTM_id']='ltm_0' #TODO Handle multiple LTMs
-                    if data['LTM'].get('Files'):
-                        params_dict['Files']=data['LTM']['Files']
-                    parameters=str({**params_dict, **self.global_params})
+                params_dict['LTM_id']='ltm_0' #TODO Handle multiple LTMs
+                if data['LTM'].get('Files'):
+                    params_dict['Files']=data['LTM']['Files']
+                parameters=str({**params_dict, **self.global_params})
 
                 self.get_logger().info(f"Loading {class_name} {name}...")
 
@@ -790,6 +802,11 @@ class CommanderNode(Node):
                     ex = self.get_lowest_load_executor()
 
                 executor_response= await self.send_create_request_to_executor(ex, name, class_name, parameters)
+                if not executor_response.created:
+                    self.get_logger().fatal(f'Experiment not loaded, could not create the process {class_name} {name} in executor {ex}. Aborting the experiment.')
+                    response.loaded = False
+                    self.executor.create_task(self.abort_experiment)
+                    return response
                 self.register_node(ex, name)
                 self.get_logger().info(f'Process {name} created in executor {ex}.')
 
@@ -1065,6 +1082,14 @@ class CommanderNode(Node):
 
         return response
     
+    def abort_experiment(self):
+        """
+        Aborts the experiment: terminates the execution nodes and shuts down the commander, whose exit stops
+        the whole launch. It runs as a task after the load callback has sent its response.
+        """
+        self.process_shutdown()
+        rclpy.shutdown()
+
     def process_shutdown(self):
         """
         Shutdown all execution nodes and terminate the commander node.
@@ -1096,6 +1121,8 @@ def main(args=None):
     except KeyboardInterrupt:
         print('Keyboard Interrupt Detected: Shutting down execution nodes...')
         commander.process_shutdown()
+    except ExternalShutdownException:
+        pass # Experiment aborted (see abort_experiment)
     except Exception as e:
         rclpy.logging.get_logger(f"execution_node_{id}").error(
             f"Unhandled exception: {e}\n{traceback.format_exc()}"
