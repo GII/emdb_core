@@ -19,7 +19,7 @@ The following figure shows the proposed software architecture. This features a s
 
 ## Components
 
-- **Execution nodes**: They are responsible for executing the cognitive nodes in a configurable single-thread or multi-thread fashion using some load balancing strategy.
+- **Execution nodes**: They are responsible for executing the cognitive nodes, distributed with a load balancing strategy. See [Execution model](execution_model.md) for details about their executors.
 - **Commander node**: A client component cannot directly manage the execution nodes. Instead, it interacts with the Commander node façade through its ROS2 interface (services and topics). The operations can be originated by a configuration file, cognitive processes or directly by the user via CLI.
 - **Long-Term Memory (LTM)**: The LTM component is responsible for keeping a record of the specific cognitive nodes that are currently available, organized by their type.
 - **Cognitive node**: Consists of an abstract class, which is intended to serve as the basis for the implementation of concrete cognitive node
