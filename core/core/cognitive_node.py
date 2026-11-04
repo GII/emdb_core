@@ -325,8 +325,10 @@ class CognitiveNode(Node):
         :type activation: cognitive_node_interfaces.msg.Activation
         """
         self.publish_activation_topic.publish(activation)
-        self.get_logger().debug("Activation for " + str(activation.node_type) + str(activation.node_name) +
-                            ": " + str(activation.activation))
+        # The text is built only if it is going to be logged: every node publishes its activation every period
+        if self.get_logger().is_enabled_for(LoggingSeverity.DEBUG):
+            self.get_logger().debug("Activation for " + str(activation.node_type) + str(activation.node_name) +
+                                ": " + str(activation.activation))
         
     def calculate_metacognitive_parameters(self):
         """
@@ -612,7 +614,8 @@ class CognitiveNode(Node):
             if self.override_input.node_name != msg.node_name:
                 self.get_logger().warn(f'Override activation received from a different node. Previous: {self.override_input.node_name}, New: {msg.node_name}')
             self.override_input=msg
-            self.get_logger().debug(f'Override activation received: {self.override_input.activation} from node {self.override_input.node_name} ({self.override_input.node_type})')
+            if self.get_logger().is_enabled_for(LoggingSeverity.DEBUG):
+                self.get_logger().debug(f'Override activation received: {self.override_input.activation} from node {self.override_input.node_name} ({self.override_input.node_type})')
         elif msg_time<current_time:
             self.get_logger().warn(f'Detected jump back in time, override activation of node: {msg.node_name} ({msg.node_type})')
         
