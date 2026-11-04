@@ -8,4 +8,13 @@ This repository is dedicated to store the execution middleware (commander node +
 - **core_interfaces:** Needed services and messages definitions.
 - **dummy_nodes:** Minimum implementation for each cognitive node. The idea is to have cognitive nodes as barebones as possible to run experiments where we only want to focus on a specific cognitive node variation / algorithm. In these cases, we want to reduce the remaining part of the cognitive architecture to a minimum functional set of elements, to avoid interferences when studying a specific change in a given cognitive node.
 
+## Dependencies
+
+- ROS 2 Jazzy. Other distributions may work, but without the `EventsExecutor`, which is available from Jazzy on, the architecture uses much more CPU.
+- Numpy, lower than version 2
+- xarray and pandas
+- The packages *cognitive_nodes* and *cognitive_node_interfaces*, from [emdb_cognitive_nodes_gii](https://github.com/GII/emdb_cognitive_nodes_gii).
+
+## Documentation
+
 You can find information and tutorials about this repository and the others that are part of the e-MDB cognitive architecture software in the [PILLAR Robots official documentation](https://docs.pillar-robots.eu/en/latest/).
