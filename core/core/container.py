@@ -190,7 +190,12 @@ class Container:
 
         if n_new + prev_n > cap:
             # Wraping case: new slots will overwrite some of the oldest valid slots.
-            buffer_indexes[:] = np.remainder(buffer_indexes - n_new, cap)
+            # First fill the free slots: then the container is full and every index is valid.
+            n_free = cap - prev_n
+            if n_free > 0:
+                buffer_indexes[slots[:n_free]] = np.arange(prev_n, cap, dtype=np.int64)
+            # Rotate adding the complement: subtracting would underflow, as buffer_index is uint32.
+            buffer_indexes[:] = np.remainder(buffer_indexes + (cap - (n_new - n_free)), cap)
 
         else:
             # Non-wrapping case: just mark new slots as valid with correct buffer_index.
