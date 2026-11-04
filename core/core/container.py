@@ -651,8 +651,8 @@ def consolidate_containers(containers: list[Container], write_container: Contain
 
     Labels mode determines how to handle feature labels when write_container is provided:
         - "extend": Union of labels from write_container and all containers. New labels are added to write_container if not already present
-        - "original": Use labels from write_container as-is. Only features matching these labels will be included in the output. 
-        Raises error if any of the write container labels are missing from the input containers.
+        - "original": Use labels from write_container as-is. Only features matching these labels will be included in the output.
+          Raises error if any of the write container labels are missing from the input containers.
 
     """
     new_labels = []

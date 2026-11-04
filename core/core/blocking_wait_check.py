@@ -14,6 +14,7 @@ exception instead (for tests: an exception in a callback stops the whole
 execution node).
 
 Executor threads are detected in two ways:
+
 - Python executors (SingleThreadedExecutor, MultiThreadedExecutor): the stack of
   the thread contains frames of rclpy/executors.py.
 - Executors implemented in C++ (EventsExecutor), whose frames are not visible:
