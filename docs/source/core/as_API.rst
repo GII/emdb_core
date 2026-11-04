@@ -19,7 +19,6 @@ MultiContainer is a similar structure for traces, that is, groups of samples.
 
 .. automodule:: core.container
     :members:
-    :undoc-members:
     :show-inheritance:
 
 ++++++++++++++
