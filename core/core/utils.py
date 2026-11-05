@@ -47,7 +47,7 @@ def perception_dict_to_msg(perception_dict):
     :param perception_dict: Dictionary that contais the perceptions.
     :type perception_dict: dict
     :return: The ROS message with the perception.
-    :rtype: cognitve_node_interfaces.msg.Perception
+    :rtype: cognitive_node_interfaces.msg.Perception
     """
     msg = Perception()
     if perception_dict:
@@ -63,7 +63,7 @@ def actuation_dict_to_msg(actuation_dict):
     :param actuation_dict: Dictionary that contais the actuation signal.
     :type actuation_dict: dict
     :return: The ROS message with the actuation.
-    :rtype: cognitve_node_interfaces.msg.Actuation
+    :rtype: cognitive_node_interfaces.msg.Actuation
     """
     msg = Actuation()
     if actuation_dict:
@@ -77,11 +77,11 @@ def dict_to_msg(msg, object_dict):
     Transform an object dictionary into a ROS message.
 
     :param msg: Message to transform
-    :type msg: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :type msg: cognitive_node_interfaces.msg.Perception or cognitive_node_interfaces.msg.Actuation
     :param object_dict: Dictionary that contais the data.
     :type object_dict: dict
     :return: The ROS message with the perception.
-    :rtype: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :rtype: cognitive_node_interfaces.msg.Perception or cognitive_node_interfaces.msg.Actuation
     """
 
     if object_dict:
@@ -113,7 +113,7 @@ def perception_msg_to_dict(msg):
     Transform a ROS message that contains a perception into a dictionary.
 
     :param msg: The ROS message with the perception.
-    :type msg: cognitve_node_interfaces.msg.Perception
+    :type msg: cognitive_node_interfaces.msg.Perception
     :return: The dictionary with the perceptions.
     :rtype: dict
     """
@@ -126,7 +126,7 @@ def actuation_msg_to_dict(msg):
     Transform a ROS message that contains an actuation into a dictionary.
 
     :param msg: The ROS message with the perception.
-    :type msg: cognitve_node_interfaces.msg.Actuation
+    :type msg: cognitive_node_interfaces.msg.Actuation
     :return: The dictionary with the actuation.
     :rtype: dict
     """
@@ -139,7 +139,7 @@ def msg_to_dict(msg):
     Transform a ROS message that contains an object list into a dictionary.
 
     :param msg: The ROS message containing the object list.
-    :type msg: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :type msg: cognitive_node_interfaces.msg.Perception or cognitive_node_interfaces.msg.Actuation
     :return: A dictionary representation of the object list.
     :rtype: dict
     """

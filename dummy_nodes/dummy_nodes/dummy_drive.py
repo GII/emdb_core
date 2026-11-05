@@ -11,7 +11,7 @@ class DriveDummy(Drive):
         In this case, the evaluation is always 1.0.
 
         :param perception: The given normalized perception. Not used in this case.
-        :type perception: dict
+        :type perception: core.container.Container or None
         :return: Evaluation msg with the evaluation value and the timestamp.
         :rtype: cognitive_node_interfaces.msg.Evaluation
         """

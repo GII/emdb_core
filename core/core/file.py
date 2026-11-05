@@ -15,10 +15,26 @@ from cognitive_node_interfaces.msg import SuccessRate
 from core_interfaces.srv import GetNodeFromLTM
 
 class File():
-    """A MDB file."""
+    """
+    A file with output data of an experiment. The configuration file of the experiment selects them (LTM: Files).
+    Files are opened and written by the thread of the main loop.
+    """
 
     def __init__(self, ident, file_name, node, flush_freq=0, **params):
-        """Init attributes when a new object is created."""
+        """
+        Init attributes when a new object is created.
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file. A number is added before the extension when it is opened.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param flush_freq: Number of writes between flushes, defaults to 0 (never).
+        :type flush_freq: int
+        :param params: Other parameters, not used.
+        :type params: dict
+        """
         self.ident = ident
         self.file_name = file_name
         self.file_object = None
@@ -58,11 +74,21 @@ class File():
         raise NotImplementedError
     
     def write_episode(self, msg):
-        "Writes data related to an episode"
+        """
+        Writes data related to an episode. It does nothing by default.
+
+        :param msg: The episode.
+        :type msg: core_interfaces.msg.Container
+        """
         return None
 
     def _write_file(self, data):
-        """Write data to the file."""
+        """
+        Write data to the file.
+
+        :param data: The data.
+        :type data: str
+        """
         if self.file_object:
             self.file_object.write(data)
             self.write_count += 1
@@ -127,7 +153,7 @@ class FilePNodesSuccess(File):
             self.node.pnodes_success[pnode] = None
 
 class FileTrialsSuccess(File):
-    """A file that records whether a P-node's activation has been successful or not."""
+    """A file with a row per trial: its iterations, its episodes, and whether it was successful or not."""
 
     def write_header(self):
         """Write the header of the file."""
@@ -197,6 +223,9 @@ class FilePNodesConfidence(FileFromTopics):
         self._write_file("Iteration\tPNode\tConfidence\tGoalLinked\n")
 
     def write(self):
+        """
+        Writes the queued rows and subscribes to the success rate of new P-Nodes.
+        """
         super().write()
         pnodes = self.node.LTM_cache.get("PNode", {})
         for pnode_name in pnodes:
@@ -210,6 +239,12 @@ class FilePNodesConfidence(FileFromTopics):
                 )
 
     def success_rate_callback(self, msg):
+        """
+        Queues a row with the confidence of a P-Node.
+
+        :param msg: The success rate.
+        :type msg: cognitive_node_interfaces.msg.SuccessRate
+        """
         self.queue_row(
             f"{self.node.iteration}\t{msg.node_name}\t"
             f"{msg.success_rate:.6f}\t{int(msg.flag)}\n"
@@ -236,6 +271,9 @@ class FileSubgoalEvents(File):
         ]
 
     def write(self):
+        """
+        Writes a row for each new subgoal created by effectance (the goals whose name starts with reach_pnode\\_).
+        """
         goals = self.node.LTM_cache.get("Goal", {})
         for goal_name, goal_data in goals.items():
             if not goal_name.startswith("reach_pnode_") or goal_name in self.seen_goals:
@@ -249,7 +287,22 @@ class FileSubgoalEvents(File):
             self.seen_goals.add(goal_name)
 
 class FileSpaceContent(File):
+    """
+    Base class of the files that save the spaces of nodes.
+    """
     def __init__(self, ident, file_name, node, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
         super().__init__(ident, file_name, node, **params)
 
     def write_header(self):
@@ -321,8 +374,22 @@ class FileSpaceContent(File):
     
 
 class FilePNodesContent(FileSpaceContent):
-    """A file that saves the contents of the P-nodes."""   
+    """A file that saves the contents of the P-nodes every save_interval iterations."""   
     def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between writes, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
 
@@ -345,8 +412,22 @@ class FileLastIterationPNodesContent(FilePNodesContent):
                     
         
 class FileGoalsContent(FileSpaceContent):
-    """A file that saves the contents of the Goals at the end of an experiment."""
+    """A file that saves the contents of the Goals every save_interval iterations."""
     def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between writes, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
 
@@ -370,6 +451,20 @@ class FileLastIterationGoalsContent(FileGoalsContent):
 class FileCNodesContent(File):
     """A file that saves C-Node content from the LTM cache."""
     def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between writes, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
 
@@ -471,8 +566,16 @@ class FileNeighborsFull(File):
                         self._write_file(f"{node_type}\t{node_name}\t\t\n")
 
 class FileEpisodesDataset(File):
-    """A file that records the episodes published"""
+    """A file that records the published episodes. They are kept in an episodic buffer and written when the file is closed."""
     def __init__(self, max_size=10000, **kwargs):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param max_size: Maximum number of episodes kept, defaults to 10000.
+        :type max_size: int
+        :param kwargs: Parameters of File.
+        :type kwargs: dict
+        """
         super().__init__(**kwargs)
         self.episodic_buffer = EpisodicBuffer(self.node, main_size=max_size, secondary_size=0, inputs=["old_perception", "action",
                                                                                                     "parent_policy", 
@@ -480,6 +583,12 @@ class FileEpisodesDataset(File):
         self.semaphore = threading.Semaphore()
 
     def write_episode(self, msg):
+        """
+        Adds an episode to the episodic buffer.
+
+        :param msg: The episode.
+        :type msg: core_interfaces.msg.Container
+        """
         self.semaphore.acquire()
         episode = container_msg_to_episode(msg)
         self.node.get_logger().debug(f"Received episode to write: {episode}")
@@ -488,9 +597,15 @@ class FileEpisodesDataset(File):
         self.semaphore.release()
 
     def write(self):
+        """
+        It does nothing: the episodes are written when the file is closed.
+        """
         return None
     
     def close(self):
+        """
+        Writes the episodes of the buffer and closes the file.
+        """
         self.semaphore.acquire()    
         dataframe = self.episodic_buffer.get_dataframes()[0]
         if dataframe is not None:
@@ -554,6 +669,9 @@ class FileWorldModelSuccess(FileFromTopics):
         )
 
     def write(self):
+        """
+        Writes the queued rows and subscribes to the prediction error of new World Models.
+        """
         super().write()
         # Check world model nodes in LTM cache
         world_models = self.node.LTM_cache.get("WorldModel", {})
@@ -568,6 +686,12 @@ class FileWorldModelSuccess(FileFromTopics):
                 )
 
     def success_rate_callback(self, msg):
+        """
+        Queues a row with the prediction error of a World Model.
+
+        :param msg: The prediction error.
+        :type msg: cognitive_node_interfaces.msg.SuccessRate
+        """
         self.queue_row(
             str(self.node.iteration)
             + "\t"
@@ -579,8 +703,22 @@ class FileWorldModelSuccess(FileFromTopics):
 
 
 class FileSaveModels(File):
-    """A file that triggers the saving of models in nodes."""
+    """Not a data file: it creates a folder and triggers the saving of the models of the nodes in it."""
     def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the output folder. A number is added to it.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between saves, 0 to disable them, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
         super().__init__(ident, file_name, node, **params)
         self.folder_path = None
         self.save_interval = save_interval
@@ -608,6 +746,9 @@ class FileSaveModels(File):
     def write(self):
         # Trigger save models in all nodes in LTM cache, all of them at once (each node saves its own model)
 
+        """
+        Asks the nodes with a model to save it, when it is time to do so.
+        """
         write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
         if write_needed:
             calls = []
@@ -622,5 +763,8 @@ class FileSaveModels(File):
             self.node.call_services(calls)
 
     def close(self):
+        """
+        It does nothing: there is no file to close.
+        """
         return None
 

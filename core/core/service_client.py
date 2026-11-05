@@ -59,7 +59,7 @@ class ServiceClientAsync():
     """
     def __init__(self, node:Node, service_type, service_name, callback_group) -> None:
         """
-        Constructor for the ServiceClient class.
+        Constructor for the ServiceClientAsync class.
 
         :param node: ROS2 node that will host the service client.
         :type node: rclpy.node.Node

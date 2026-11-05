@@ -38,8 +38,23 @@ def _format_debug_table(columns: list[str], rows: list[list[str]]) -> str:
 
 
 class Container:
+    """
+    A fixed-size ring of samples. Each sample has a timestamp and a value for each feature, identified by its label.
+    Perceptions, actions, rewards, episodes and spaces are all stored in Containers, and they are sent through ROS as
+    core_interfaces.msg.Container messages (see to_msg and from_msg).
+
+    When the container is full, new samples overwrite the oldest ones. The samples are kept in the DataArray of the data
+    attribute, whose positions (slots) don't follow the age of the samples: use read or read_numpy to get them in order,
+    from the oldest to the newest.
+    """
     @property
     def name(self) -> str | None:
+        """
+        Name of the container.
+
+        :return: The name.
+        :rtype: str or None
+        """
         return self.data.name
 
     @name.setter
@@ -48,14 +63,43 @@ class Container:
 
     @property
     def size(self) -> int:
+        """
+        Number of valid samples, which is also the value of len(container).
+
+        :return: The number of samples.
+        :rtype: int
+        """
         valid = self._valid_cache
         return int(np.count_nonzero(valid))
     
     @property
     def feature_labels(self) -> list[str]:
+        """
+        Labels of the features, in the order of the columns of the samples.
+
+        :return: The labels.
+        :rtype: list[str]
+        """
         return self._feature_labels_cache.tolist()
 
     def __init__(self, name, max_size: int, container_type: str, data_type=np.float64, labels: list = None, attrs: dict = None) -> Container:
+        """
+        Creates an empty container.
+
+        :param name: Name of the container.
+        :type name: str
+        :param max_size: Maximum number of samples.
+        :type max_size: int
+        :param container_type: Kind of data it stores, e.g. "perception" or "action".
+        :type container_type: str
+        :param data_type: Data type of the values, defaults to numpy.float64. Only float32, float64, int32, int64, uint8 and
+            boolean values can be sent in a message.
+        :type data_type: numpy.dtype
+        :param labels: Labels of the features, defaults to no features.
+        :type labels: list[str]
+        :param attrs: Metadata of the container. In a message, keys and values are sent as strings.
+        :type attrs: dict
+        """
         self.feature_dim = f"features"
         self.container_type = container_type
         feature_labels = labels if labels is not None else []
@@ -348,6 +392,39 @@ class Container:
         allow_missing: bool = False,
         fill_value: float | int | None = None,
     ) -> int | np.ndarray:
+        """
+        Adds samples after the newest one. When there is no room, they overwrite the oldest ones, and if there are more
+        samples than max_size, only the last max_size samples are added.
+
+        When the labels of the source are known, columns are matched by label, and source labels that the container
+        doesn't have are ignored (unless extend_labels is set).
+
+        :param sample: The samples: another Container (its valid samples, with their labels and timestamps) or an array with
+            one row per sample (a 1D array is a single sample).
+        :type sample: Container or numpy.ndarray
+        :param src_labels: Labels of the columns of an array. If omitted, the columns must be those of the container, in the
+            same order. Not used with a Container.
+        :type src_labels: list[str]
+        :param src_dtype: Data type of an array, by default its own. It must be castable to the data type of the container
+            (same kind). Not used with a Container.
+        :type src_dtype: numpy.dtype
+        :param timestamps: Timestamps of the samples of an array, which are required. Not used with a Container.
+        :type timestamps: numpy.ndarray or float
+        :param extend_labels: Add to the container the labels of the source that it doesn't have, defaults to False. Existing
+            samples get fill_value in the new features.
+        :type extend_labels: bool
+        :param allow_missing: Accept a source without some labels of the container, defaults to False. The new samples get
+            fill_value in those features.
+        :type allow_missing: bool
+        :param fill_value: Value for the missing features. By default, NaN for floating point data, False for booleans and 0
+            for the rest.
+        :type fill_value: float or int
+        :return: Slots where the samples have been written: an integer for one sample, an array for several, and an empty
+            array if there was nothing to add.
+        :rtype: int or numpy.ndarray
+        :raises ValueError: If the source doesn't match the container (data type, number of columns, missing labels, number
+            of timestamps), or the timestamps of an array are missing.
+        """
         if isinstance(sample, Container):
             src_data = sample.data
             src_valid = sample._valid_cache
@@ -419,10 +496,22 @@ class Container:
         return int(written_slots[0]) if written_slots.size == 1 else written_slots
     
     def push_from_msg(self, msg: ContainerMsg):
+        """
+        Adds the samples of a message, matching the columns by label (see push).
+
+        :param msg: The message.
+        :type msg: core_interfaces.msg.Container
+        :return: Slots where the samples have been written (see push).
+        :rtype: int or numpy.ndarray
+        :raises ValueError: If the message doesn't have all the labels of the container or its contents are inconsistent.
+        """
         values, ts, feature_labels, dtype, attrs = self.decode_container_msg_payload(msg)
         return self.push(values, src_labels=feature_labels, src_dtype=dtype, timestamps=ts)
 
     def clear(self) -> None:
+        """
+        Removes all the samples. Labels, attributes and maximum size don't change.
+        """
         self._valid_cache[:] = False
         self._buffer_index_cache[:] = -1
         self._timestamp_cache[:] = 0.0
@@ -431,6 +520,21 @@ class Container:
         self._n_valid = 0
 
     def read(self, index: int | slice | list[int] | np.ndarray | None = None, ordered: bool = True) -> xr.DataArray:
+        """
+        Reads samples as a DataArray with dimensions (sample, features), and with timestamp, buffer_index and valid
+        coordinates. read_numpy is much faster: use it in frequent operations.
+
+        :param index: The samples to read, by age: None (default) for all of them, an integer (0 is the oldest, -1 the newest),
+            a slice, or a list or 1D array of positions.
+        :type index: int or slice or list[int] or numpy.ndarray
+        :param ordered: Return the samples from the oldest to the newest, defaults to True. If False, a list or array of positions
+            keeps the requested order, and index=None returns the samples in the order of their slots.
+        :type ordered: bool
+        :return: The samples.
+        :rtype: xarray.DataArray
+        :raises IndexError: If a position is out of range.
+        :raises ValueError: If an array of positions is not 1D.
+        """
         if index is None:
             if ordered:
                 slots = self._ordered_all_valid_slots()
@@ -462,6 +566,15 @@ class Container:
         return out.isel(sample=np.argsort(out.coords["buffer_index"].values, kind="stable"))
 
     def read_slots(self, slots: int | slice | list[int] | np.ndarray) -> np.ndarray:
+        """
+        Reads the values stored in some slots of the underlying array. Slots don't follow the age of the samples and their
+        validity is not checked: this is a low-level access to use with the slots returned by push.
+
+        :param slots: The slots.
+        :type slots: int or slice or list[int] or numpy.ndarray
+        :return: The values, which may share memory with the container.
+        :rtype: numpy.ndarray
+        """
         return self._feature_cache[slots]
     
     def read_numpy(self) -> tuple[np.ndarray, np.ndarray]:
@@ -498,6 +611,14 @@ class Container:
     
     def to_msg(self) -> ContainerMsg:
 
+        """
+        Writes the valid samples, from the oldest to the newest, in a message. The container reuses the same message in every
+        call, so the result of a previous call changes: send it or copy it before calling this method again.
+
+        :return: The message.
+        :rtype: core_interfaces.msg.Container
+        :raises ValueError: If the data type of the container cannot be sent.
+        """
         values, ts = self._read_ordered_numpy()
 
         dtype = values.dtype
@@ -540,6 +661,15 @@ class Container:
 
     @staticmethod
     def decode_container_msg_payload(msg):
+        """
+        Decodes the contents of a message.
+
+        :param msg: The message.
+        :type msg: core_interfaces.msg.Container
+        :return: The values (one row per sample), the timestamps, the feature labels, the data type and the attributes.
+        :rtype: tuple[numpy.ndarray, numpy.ndarray, list[str], numpy.dtype, dict]
+        :raises ValueError: If the size of the values or the timestamps doesn't match the number of rows of the message.
+        """
         dtype = CODE_TO_DTYPE[msg.dtype_code]
         n_rows = int(msg.n_rows)
         n_features = len(msg.feature_labels)
@@ -570,6 +700,16 @@ class Container:
     def from_msg(cls, msg: ContainerMsg, max_size: None | int = None) -> Container | None:
 
         # Return None if message is empty (no data, timestamps, or feature labels)
+        """
+        Creates a container from a message.
+
+        :param msg: The message.
+        :type msg: core_interfaces.msg.Container
+        :param max_size: Maximum number of samples of the container, by default the one in the message.
+        :type max_size: int
+        :return: The container, or None if the message has no data, timestamps or labels.
+        :rtype: Container or None
+        """
         if len(msg.data_bytes) == 0 or len(msg.timestamps) == 0 or len(msg.feature_labels) == 0:
             return None
 
@@ -588,6 +728,21 @@ class Container:
     
     @classmethod
     def from_dataarray(cls, data_array: xr.DataArray, container_type:str = "", name: str = "") -> Container:
+        """
+        Creates a container from a DataArray. Its maximum size is the number of samples of the DataArray, and all of them are
+        added, whether they are valid or not.
+
+        :param data_array: The data, with "sample" and "features" dimensions. Its timestamp coordinate, if it has one, gives
+            the timestamps of the samples (0 otherwise).
+        :type data_array: xarray.DataArray
+        :param container_type: Kind of data it stores, defaults to an empty string.
+        :type container_type: str
+        :param name: Name of the container, by default the one of the DataArray.
+        :type name: str
+        :return: The container.
+        :rtype: Container
+        :raises ValueError: If the DataArray doesn't have the required dimensions.
+        """
         if "sample" not in data_array.dims or "features" not in data_array.dims:
             raise ValueError("data_array must have the 'sample' and 'features' dimensions")
 
@@ -649,11 +804,28 @@ class Container:
 def consolidate_containers(containers: list[Container], write_container: Container | None = None, labels_mode: str = "original", name: str | None = None, container_type: str | None = None, attrs: dict = {}) -> Container:
     """Consolidate multiple containers into a single container by concatenating their features and aligning their samples.
 
-    Labels mode determines how to handle feature labels when write_container is provided:
-        - "extend": Union of labels from write_container and all containers. New labels are added to write_container if not already present
-        - "original": Use labels from write_container as-is. Only features matching these labels will be included in the output. 
-        Raises error if any of the write container labels are missing from the input containers.
+    The features of the result are labeled "<container name>:<feature label>", and each sample gets the oldest of the
+    timestamps of the samples it comes from. All the containers must have the same number of samples.
 
+    :param containers: The containers to consolidate.
+    :type containers: list[Container]
+    :param write_container: Container that receives the result in the "original" mode.
+    :type write_container: Container
+    :param labels_mode: How to handle the labels when write_container is provided, defaults to "original".
+
+        - "original": Use labels from write_container as-is. Only features matching these labels are written.
+        - "extend": Don't write in write_container: create a new container with all the labels of the consolidated features, and with the name, the type and the attributes of write_container.
+
+    :type labels_mode: str
+    :param name: Name of a new container, defaults to "consolidated".
+    :type name: str
+    :param container_type: Type of a new container, defaults to "consolidated".
+    :type container_type: str
+    :param attrs: Metadata of a new container.
+    :type attrs: dict
+    :return: write_container in the "original" mode, or a new container with as many samples as the inputs.
+    :rtype: Container
+    :raises ValueError: If labels of write_container are missing from the input containers, or labels_mode is not valid.
     """
     new_labels = []
     data = [container._read_ordered_numpy() for container in containers]
@@ -720,6 +892,12 @@ class MultiContainer:
     
     @property
     def name(self) -> str | None:
+        """
+        Name of the container.
+
+        :return: The name.
+        :rtype: str or None
+        """
         return self.data.name
 
     @name.setter
@@ -728,6 +906,12 @@ class MultiContainer:
 
     @property
     def feature_labels(self) -> list[str]:
+        """
+        Labels of the features, in the order of the columns of the samples.
+
+        :return: The labels.
+        :rtype: list[str]
+        """
         return self._feature_labels_cache.tolist()
     
     @property
@@ -750,6 +934,24 @@ class MultiContainer:
         labels: list = None,
         attrs: dict = None,
     ) -> None:
+        """
+        Creates an empty container.
+
+        :param name: Name of the container.
+        :type name: str
+        :param max_traces: Maximum number of traces.
+        :type max_traces: int
+        :param max_size: Maximum number of samples of each trace.
+        :type max_size: int
+        :param container_type: Kind of data it stores.
+        :type container_type: str
+        :param data_type: Data type of the values, defaults to numpy.float64.
+        :type data_type: numpy.dtype
+        :param labels: Labels of the features, defaults to no features.
+        :type labels: list[str]
+        :param attrs: Metadata of the container.
+        :type attrs: dict
+        """
         self.feature_dim = "features"
         self.container_type = container_type
         feature_labels = labels if labels is not None else []
