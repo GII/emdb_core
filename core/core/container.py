@@ -809,8 +809,7 @@ def consolidate_containers(containers: list[Container], write_container: Contain
 
     :param containers: The containers to consolidate.
     :type containers: list[Container]
-    :param write_container: Container that receives the result in the "original" mode. It must already have samples: an
-        empty container is treated as if it had not been provided.
+    :param write_container: Container that receives the result in the "original" mode.
     :type write_container: Container
     :param labels_mode: How to handle the labels when write_container is provided, defaults to "original".
 
