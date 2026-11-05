@@ -522,22 +522,21 @@ class FileDrivesPerceptions(File):
                     if "activation" in n_info and drive_tag == mission_tag:
                         n_activation = n_info["activation"]
                         list_drives[drive] = ["evaluation: ", d_activation/n_activation if n_activation != 0 else 0.0]
+        # Latest value of each feature of each perception, e.g. {"fruits": {"fruits:x": 0.5, ...}, ...}
         formatted = {}
         for key, value in self.node.perception_cache.items():
-            data_list = value.get("data", [])
-            if data_list:
-                clean_data = {
-                    k: v for k, v in data_list[0].items()
-                }
-                formatted[key] = clean_data
+            container = value.get("data")
+            if container is not None and len(container) > 0:
+                values, _ = container.read_numpy()
+                formatted[key] = {label: float(v) for label, v in zip(container.feature_labels, values[-1])}
         self.file_object.write(
             str(self.node.iteration)
             + "\t"
-            + self.node.current_world
+            + str(self.node.current_world)
             + "\t"
             + str(list_drives)
             + "\t"
-            + self.node.current_policy
+            + str(self.node.current_policy)
             + "\t"
             + str(formatted)
             + "\t"
