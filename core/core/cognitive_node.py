@@ -51,6 +51,10 @@ class CognitiveNode(Node):
         :type class_name: str
         :param node_type: The type of the node.
         :type node_type: str
+        :param params: Other parameters, which become attributes of the node, e.g. Control, Connectors and globals
+            from the configuration file. The period of the activation timer is the activation_period key of globals,
+            in seconds (0.01 by default).
+        :type params: dict
         """
         super().__init__(name)
         self.name = name
@@ -193,8 +197,8 @@ class CognitiveNode(Node):
         Get the data associated with the node.
 
         This method returns a dictionary containing the attributes of
-        the node, excluding private attributes and the 'subscription'
-        attribute found in the ANode class.
+        the node, excluding private attributes, those whose name contains
+        'service' or 'topic', and the 'subscription' attribute.
 
         :return: A dictionary with node data.
         :rtype: dict
@@ -258,7 +262,7 @@ class CognitiveNode(Node):
         """
         Calculate the node's activation for the given perception.
         :param perception: The perception for which the activation will be calculated.
-        :type perception: dict
+        :type perception: core.container.Container or None
         :param activation_list: List of activations considered in the node
         :type activation_list: dict
         """
@@ -302,7 +306,7 @@ class CognitiveNode(Node):
 
     def calculate_activation_max(self, activation_list):
         """
-        Calculates the activation of the node by multiplying the activation of the nodes in the activation_list. 
+        Calculates the activation of the node as the maximum of the activation of the nodes in the activation_list. 
         The timestamp of the resulting activation will be the oldest timestamp of the nodes in the list.
 
         :param activation_list: Dictionary with the activation of multiple nodes. 
@@ -431,7 +435,8 @@ class CognitiveNode(Node):
     async def get_activation_callback(self, request, response): 
         """
         Callback method to calculate and return the node's activations.
-        This method calculates the activation of the node based on its perception.
+        This method calculates the activation of the node for the perception in the request. It waits for
+        calculate_activation if it is a coroutine.
 
         :param request: The request containing the perception data.
         :type request: cognitive_node_interfaces.srv.GetActivation.Request
@@ -451,10 +456,9 @@ class CognitiveNode(Node):
     
     async def get_confidence_callback(self, request, response):
         """
-        Callback method to calculate and return the node's confidence.
-        This method calculates the confidence of the node based on its perception.
+        Callback method to calculate and return the node's confidence, from its metacognitive parameters.
 
-        :param request: The request containing the perception data.
+        :param request: Empty request.
         :type request: cognitive_node_interfaces.srv.GetConfidence.Request
         :param response: The response that will contain the calculated confidence.
         :type response: cognitive_node_interfaces.srv.GetConfidence.Response
@@ -514,7 +518,9 @@ class CognitiveNode(Node):
     
     async def publish_activation_callback(self):
         """
-        Timed publish of the activation value. This method will calculate the activation based on the neighbor's activation, and then publish it in the corresponding topic.
+        Timed publish of the activation value. If the publication is enabled and all the inputs have been updated, this method
+        calculates the activation based on the neighbor's activation, and then publishes it in the corresponding topic. An override
+        activation applies if it is higher than the calculated one.
         """
         if self.activation_topic:
             if len(self.activation_inputs)==0: #Calculates activation when there are no inputs configured (Support for custom nodes)
@@ -670,7 +676,7 @@ class CognitiveNode(Node):
 
     def create_node_client(self, name, class_name, parameters={}):
         """
-        This method calls the add node service of the commander.
+        This method calls the create service of the commander.
 
         :param name: Name of the node to be created.
         :type name: str
@@ -678,8 +684,8 @@ class CognitiveNode(Node):
         :type class_name: str
         :param parameters: Optional parameters that can be passed to the node, defaults to {}.
         :type parameters: dict
-        :return: Success status received from the commander.
-        :rtype: bool
+        :return: Coroutine to be awaited, which returns the response of the commander.
+        :rtype: Coroutine
         """
 
         self.get_logger().info("Requesting node creation")
@@ -699,6 +705,11 @@ class CognitiveNode(Node):
         Subclasses should populate ``_duplicate_parameters`` with their
         constructor configuration. Runtime ROS objects are deliberately not
         inferred from ``__dict__``.
+
+        :param include_neighbors: Include the neighbors of this node, defaults to True.
+        :type include_neighbors: bool
+        :return: The parameters.
+        :rtype: dict
         """
         parameters = deepcopy(self._duplicate_parameters)
         if include_neighbors:
@@ -706,11 +717,25 @@ class CognitiveNode(Node):
         return parameters
 
     def register_duplicate_parameters(self, **parameters):
-        """Register constructor parameters required to recreate this node."""
+        """
+        Register constructor parameters required to recreate this node.
+
+        :param parameters: The parameters.
+        :type parameters: dict
+        """
         self._duplicate_parameters.update(deepcopy(parameters))
 
     async def duplicate_node_callback(self, request, response):
-        """Create a duplicate through the common cognitive-node service."""
+        """
+        Create a duplicate through the common cognitive-node service.
+
+        :param request: The request, with the optional name of the duplicate and whether it keeps the neighbors.
+        :type request: cognitive_node_interfaces.srv.DuplicateNode.Request
+        :param response: The response, with the name of the duplicate and whether it was created.
+        :type response: cognitive_node_interfaces.srv.DuplicateNode.Response
+        :return: The response.
+        :rtype: cognitive_node_interfaces.srv.DuplicateNode.Response
+        """
         duplicate_name = await self.duplicate_node(
             name=request.name or None,
             include_neighbors=request.include_neighbors,
@@ -729,6 +754,7 @@ class CognitiveNode(Node):
             ``<name>_dup_<count>`` name is generated.
         :param parameters: Optional constructor parameters that override the
             node's duplicate defaults.
+        :param include_neighbors: Include the neighbors of this node in the duplicate, defaults to True.
         :return: The duplicate name, or ``None`` when creation fails.
         """
         if name is None:

@@ -21,11 +21,12 @@ class LTM(Node):
     as well as publishing changes.
 
     Attributes:
-        id (str): An identifier for the LTM instance.
-        changes_topic (bool): Flag to indicate if changes are being published.
+        id (int): An identifier for the LTM instance.
+        changes_topic (bool): Flag to indicate if changes are being published in the topic state.
         cognitive_nodes (dict): A dictionary to store cognitive nodes by type.
         state_publisher (Publisher): Publisher for the state of the LTM.
         add_node_service (Service): Service to add new cognitive nodes.
+        allocate_duplicate_name_service (Service): Service to reserve the name of a duplicate.
         replace_node_service (Service): Service to replace existing cognitive nodes.
         delete_node_service (Service): Service to delete cognitive nodes.
         update_neighbors_service (Service): Service to update the neighbors list of a node.
@@ -195,7 +196,17 @@ class LTM(Node):
     
     # region Callbacks
     def allocate_duplicate_name_callback(self, request, response):
-        """Reserve the next duplicate name for a node family."""
+        """
+        Callback function for the 'allocate_duplicate_name' service.
+        Reserves the next duplicate name for a node family.
+
+        :param request: The service request containing the root name of the family.
+        :type request: core_interfaces.srv.AllocateDuplicateName.Request
+        :param response: The service response containing the reserved name.
+        :type response: core_interfaces.srv.AllocateDuplicateName.Response
+        :return: The response with the reserved name.
+        :rtype: core_interfaces.srv.AllocateDuplicateName.Response
+        """
         root_name = str(request.root_name)
         index = self._duplicate_counters.get(root_name, 0)
         while (
@@ -352,7 +363,7 @@ class LTM(Node):
     def set_changes_topic_callback(self, request, response):
         """
         Callback function for the 'set_changes_topic' service.
-        Sets the topic for tracking changes in the LTM.
+        Enables or disables the publication of the changes in the LTM.
 
         :param request: The service request containing the boolean value for the changes topic.
         :type request: core_interfaces.srv.SetChangesTopic.Request
@@ -509,7 +520,14 @@ class LTM(Node):
         return False
 
     def node_exists_any_type(self, node_name):
-        """Return whether a node name is present in any LTM node type."""
+        """
+        Return whether a node name is present in any LTM node type.
+
+        :param node_name: The name of the cognitive node.
+        :type node_name: str
+        :return: True if the node exists, False otherwise.
+        :rtype: bool
+        """
         return any(node_name in nodes for nodes in self.cognitive_nodes.values())
     
     def node_type_exists(self, node_type):

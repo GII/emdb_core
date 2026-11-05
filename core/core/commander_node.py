@@ -34,6 +34,11 @@ def serialized(callback):
     time, in arrival order, even while they await execution nodes. Executors do not ensure
     it (the EventsExecutor ignores callback groups), and the callbacks share the commander
     state (execution nodes and their cognitive nodes).
+
+    :param callback: The service callback.
+    :type callback: Coroutine function
+    :return: The decorated callback.
+    :rtype: Coroutine function
     """
     @functools.wraps(callback)
     async def wrapper(self, request, response):
@@ -48,9 +53,13 @@ def serialized(callback):
 class CommanderNode(Node):
     """
     This class is responsible for handling the requests from the user and sending them to the execution nodes.
+    It launches the execution nodes and keeps track of the cognitive nodes of each one.
 
     Attributes:
-        cli (:class:`rclpy.client.Client`): A client for the 'SendCommand' service.
+        executors (dict): The process of each execution node, by identifier.
+        nodes (dict): The names of the cognitive nodes of each execution node, by identifier.
+        execution_node_clients (dict): The clients for the services of each execution node, by identifier.
+        service_turns (collections.deque): Futures of the serialized service callbacks, in arrival order.
 
     """
 
@@ -58,7 +67,8 @@ class CommanderNode(Node):
         """
         Constructor for the CommanderNode class.
 
-        Creates a ROS 2 node named 'commander node' and a service for the User to send commands.
+        Creates a ROS 2 node named 'commander' and the services available from the start (the rest are
+        created when the configuration is loaded, see configure_services).
         """
         
         super().__init__('commander')
@@ -999,8 +1009,6 @@ class CommanderNode(Node):
         :type executor_id: int
         :param name: The name of the node to delete.
         :type name: str
-        :param class_name: The type of the node to delete.
-        :type class_name: str
         :return: The response from the executor.
         :rtype: core_interfaces.srv.DeleteNode.Response
         """

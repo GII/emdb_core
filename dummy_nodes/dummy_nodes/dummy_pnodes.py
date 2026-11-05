@@ -13,13 +13,13 @@ class DummyPNode(PNode):
         Callback that sends the space of the P-Node.
 
         :param request: Empty request.
-        :type request: cognitive_node_interfaces.srv.SendGoalSpace.Request
+        :type request: cognitive_node_interfaces.srv.SendSpace.Request
         :param response: Response that contains the space of the P-Node. 
             In this case it is empty.
-        :type response: cognitive_node_interfaces.srv.SendGoalSpace.Response
+        :type response: cognitive_node_interfaces.srv.SendSpace.Response
         :return: Response that contains the space of the P-Node. 
             In this case it is empty.
-        :rtype: cognitive_node_interfaces.srv.SendGoalSpace.Response
+        :rtype: cognitive_node_interfaces.srv.SendSpace.Response
         """     
         response.space = ContainerMsg()  # Return an empty space
         return response
@@ -30,7 +30,7 @@ class DummyPNode(PNode):
         This method has to be implemented in a subclass.
 
         :param perception: The perception for which P-Node activation is calculated.
-        :type perception: dict
+        :type perception: core.container.Container
         :param activation_list: The list of activations to be used for the calculation.
         :type activation_list: list
         :raises NotImplementedError: If the method is not implemented in a subclass.
@@ -49,7 +49,7 @@ class ActivatedDummyPNode(DummyPNode):
 
         :param perception: The perception for which P-Node activation is calculated.
             It is not used in this case.
-        :type perception: dict
+        :type perception: core.container.Container
         :param activation_list: The list of activations to be used for the calculation.
             It is not used in this case.
         :type activation_list: list
@@ -70,7 +70,7 @@ class NonActivatedDummyPNode(DummyPNode):
 
         :param perception: The perception for which P-Node activation is calculated.
             It is not used in this case.
-        :type perception: dict
+        :type perception: core.container.Container
         :param activation_list: The list of activations to be used for the calculation.
             It is not used in this case.
         :type activation_list: list
@@ -91,7 +91,7 @@ class RandomDummyPNode(DummyPNode):
 
         :param perception: The perception for which P-Node activation is calculated.
             It is not used in this case.
-        :type perception: dict
+        :type perception: core.container.Container
         :param activation_list: The list of activations to be used for the calculation.
             It is not used in this case.
         :type activation_list: list

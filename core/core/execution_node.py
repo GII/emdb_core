@@ -51,7 +51,8 @@ WAIT_WARNING_PERIOD = 5.0  # Seconds between warnings while waiting for discover
 class ExecutionNode(Node):
     """
     This class represents an execution node, which can execute several cognitive nodes.
-    It is subscribed to the topic where the commander node sends commands.
+    It receives the commands of the commander node through services, and it stops when its identifier
+    is published in the topic stop_execution_node.
     """
 
     def __init__(self, executor, id):

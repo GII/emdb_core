@@ -13,7 +13,14 @@ HEADER = "NodeType\tNodeName\tNeighborName\tNeighborType\n"
 
 
 def format_neighbors(state):
-    """Return the tab-separated neighbor file contents for an LTM state."""
+    """
+    Return the tab-separated neighbor file contents for an LTM state.
+
+    :param state: The LTM state, with the nodes by type.
+    :type state: dict
+    :return: The contents of the file.
+    :rtype: str
+    """
     lines = [HEADER]
     for node_type, node_dict in state.items():
         if not isinstance(node_dict, dict):
@@ -36,7 +43,14 @@ def format_neighbors(state):
 
 
 def read_ltm_state(service_name):
-    """Read the complete state from an LTM get_node service."""
+    """
+    Read the complete state from an LTM get_node service.
+
+    :param service_name: Name of the service, e.g. /ltm_0/get_node.
+    :type service_name: str
+    :return: The LTM state.
+    :rtype: dict
+    """
     node = Node("ltm_neighbors")
     client = node.create_client(GetNodeFromLTM, service_name)
     try:
@@ -63,7 +77,12 @@ def read_ltm_state(service_name):
 
 
 def main(argv=None):
-    """Read an LTM and write its FileNeighborsFull-compatible neighbor file."""
+    """
+    Read an LTM and write its FileNeighborsFull-compatible neighbor file.
+
+    :param argv: Command line arguments, by default those of the process.
+    :type argv: list
+    """
     parser = argparse.ArgumentParser(
         description=(
             "Read an LTM state and write a FileNeighborsFull-compatible file."
