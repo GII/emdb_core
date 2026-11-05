@@ -68,5 +68,3 @@ Only the thread of the main loop writes the output files. The callbacks just que
 ## Detection of blocking waits
 
 Synchronous waits call `core.blocking_wait_check.check_blocking_wait` first. If they run in the thread of an executor, it logs an error with the stack, once per call site, and the wait goes on. If the environment variable `EMDB_STRICT_BLOCKING_WAITS` is `1`, it raises an exception instead, which is useful in tests.
-
-Note that an exception not caught in a callback stops the whole execution node.
