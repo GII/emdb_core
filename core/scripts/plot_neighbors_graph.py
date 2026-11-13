@@ -15,7 +15,9 @@ The HTML lets you:
   * export a PNG, print the full graph to PDF, or export editable draw.io XML,
     choosing the output file name.
 
-The single layout is "layered by type": one horizontal band per node type.
+The default layout is "layered by type": one horizontal band per node type.
+The generated page also offers a semantic layout that arranges the
+motivational hierarchy as a wide tree, with supporting nodes on side rails.
 
 Arrows follow ACTIVATION FLOW (neighbour -> node): a node's "neighbors" are its
 inputs, so a CNode is pointed at by its PNode / Goal / WorldModel, and flow runs
@@ -72,6 +74,8 @@ DEFAULT_TYPE_LAYER = len(TYPE_ORDER)
 COL_GAP = 210        # horizontal centre gap (nodes size to their label, max ~175px wide)
 LAYER_V_GAP = 150    # vertical gap between type bands
 BARY_SWEEPS = 8      # barycentre ordering passes to reduce edge crossings
+SEMANTIC_X_GAP = 260
+SEMANTIC_Y_GAP = 170
 
 
 def parse(file_path):
@@ -159,8 +163,214 @@ def layered_positions(node_type, edges):
             for L in layers for n in order[L]}
 
 
+def semantic_positions(node_type, edges):
+    """Arrange the graph around the e-MDB motivational hierarchy.
+
+    Robot purposes, drives, goals, and subgoals form the central hierarchy.
+    World models and policies use side rails, C/P-nodes are placed near their
+    primary goal, and perceptions form a bottom band. Nodes connected to
+    multiple goals use the alphabetically first nearest goal as their stable
+    anchor.
+    """
+    names = set(node_type)
+    outgoing = {n: [] for n in names}
+    incoming = {n: [] for n in names}
+    undirected = {n: [] for n in names}
+    for source, target in edges:
+        if source not in names or target not in names:
+            continue
+        outgoing[source].append(target)
+        incoming[target].append(source)
+        undirected[source].append(target)
+        undirected[target].append(source)
+
+    goals = sorted(n for n, t in node_type.items() if t == "Goal")
+    goal_edges = {
+        goal: sorted(n for n in outgoing[goal] if node_type.get(n) == "Goal")
+        for goal in goals
+    }
+    goal_parents = {goal: 0 for goal in goals}
+    for children in goal_edges.values():
+        for child in children:
+            goal_parents[child] += 1
+    roots = sorted(goal for goal in goals if not goal_parents[goal]) or goals
+    goal_depth = {}
+    queue = [(goal, 0) for goal in roots]
+    while queue:
+        goal, depth = queue.pop(0)
+        if goal in goal_depth and goal_depth[goal] <= depth:
+            continue
+        goal_depth[goal] = depth
+        queue.extend((child, depth + 1) for child in goal_edges[goal])
+    next_depth = max(goal_depth.values(), default=-1) + 1
+    for goal in goals:
+        if goal not in goal_depth:
+            goal_depth[goal] = next_depth
+            next_depth += 1
+
+    positions = {}
+    goal_names = set(goals)
+
+    def place_row(row, y, x_offset=0):
+        width = (len(row) - 1) * SEMANTIC_X_GAP
+        for index, name in enumerate(row):
+            positions[name] = {
+                "x": index * SEMANTIC_X_GAP - width / 2 + x_offset,
+                "y": y,
+            }
+
+    drives = sorted(n for n, t in node_type.items() if t == "Drive")
+    drive_goals = {drive: set() for drive in drives}
+    for drive in drives:
+        queue = list(sorted(n for n in outgoing[drive] if n in goal_names))
+        visited = set()
+        while queue:
+            goal = queue.pop(0)
+            if goal in visited:
+                continue
+            visited.add(goal)
+            drive_goals[drive].add(goal)
+            queue.extend(goal_edges[goal])
+
+    # Assign every goal tree to one drive column. A shared goal belongs to the
+    # alphabetically first drive, keeping the layout stable between runs.
+    goal_drives = {}
+    for drive in drives:
+        for goal in sorted(drive_goals[drive]):
+            goal_drives.setdefault(goal, drive)
+    unassigned_goals = sorted(goal for goal in goals if goal not in goal_drives)
+    if unassigned_goals:
+        drive_goals["Other goals"] = set(unassigned_goals)
+        for goal in unassigned_goals:
+            goal_drives[goal] = "Other goals"
+    if not drive_goals and goals:
+        drive_goals["Other goals"] = set(goals)
+        for goal in goals:
+            goal_drives[goal] = "Other goals"
+
+    # Give each drive a separate horizontal span. The span is based on the
+    # number of leaves, so a linear branch keeps one column while siblings
+    # receive separate columns.
+    group_widths = {}
+    for drive, tree_goals in drive_goals.items():
+        roots_for_drive = sorted(
+            goal for goal in tree_goals
+            if not any(parent in tree_goals and goal in goal_edges[parent]
+                       for parent in tree_goals)
+        ) or sorted(tree_goals)
+        leaf_count = 0
+        for root in roots_for_drive:
+            stack = [(root, set())]
+            while stack:
+                goal, path = stack.pop()
+                if goal in path:
+                    leaf_count += 1
+                    continue
+                children = [child for child in goal_edges[goal] if child in tree_goals]
+                if not children:
+                    leaf_count += 1
+                else:
+                    stack.extend((child, path | {goal}) for child in children)
+        group_widths[drive] = max(1, leaf_count) * SEMANTIC_X_GAP
+    total_width = sum(group_widths.values()) + max(0, len(group_widths) - 1) * SEMANTIC_X_GAP
+    cursor = -total_width / 2
+    group_centers = {}
+    for drive in sorted(drive_goals):
+        group_centers[drive] = cursor + group_widths[drive] / 2
+        cursor += group_widths[drive] + SEMANTIC_X_GAP
+
+    for drive in sorted(drive_goals):
+        tree_goals = drive_goals[drive]
+        center = group_centers[drive]
+        roots_for_drive = sorted(
+            goal for goal in tree_goals
+            if not any(parent in tree_goals and goal in goal_edges[parent]
+                       for parent in tree_goals)
+        ) or sorted(tree_goals)
+        next_leaf = 0
+        goal_x = {}
+
+        def assign_columns(goal, path):
+            nonlocal next_leaf
+            if goal in path:
+                goal_x[goal] = center + next_leaf * SEMANTIC_X_GAP
+                next_leaf += 1
+                return goal_x[goal]
+            children = [child for child in goal_edges[goal] if child in tree_goals]
+            if not children:
+                goal_x[goal] = center + next_leaf * SEMANTIC_X_GAP
+                next_leaf += 1
+                return goal_x[goal]
+            child_x = [assign_columns(child, path | {goal}) for child in children]
+            goal_x[goal] = (child_x[0] + child_x[-1]) / 2
+            return goal_x[goal]
+
+        for root in roots_for_drive:
+            assign_columns(root, set())
+        if goal_x:
+            adjustment = center - (min(goal_x.values()) + max(goal_x.values())) / 2
+            goal_x = {goal: x + adjustment for goal, x in goal_x.items()}
+        for goal, x in goal_x.items():
+            positions[goal] = {"x": x, "y": (goal_depth[goal] + 2) * SEMANTIC_Y_GAP}
+        if drive in node_type:
+            positions[drive] = {"x": center, "y": SEMANTIC_Y_GAP}
+
+    purposes = sorted(n for n, t in node_type.items() if t == "RobotPurpose")
+    purpose_y = 0
+    place_row(purposes, purpose_y)
+
+    def primary_goal(name):
+        distances = {name: 0}
+        queue = [name]
+        while queue:
+            current = queue.pop(0)
+            if current in goal_names:
+                return current
+            for neighbour in sorted(undirected.get(current, [])):
+                if neighbour not in distances:
+                    distances[neighbour] = distances[current] + 1
+                    queue.append(neighbour)
+        return None
+
+    anchored = {}
+    for name in sorted(names):
+        if name not in positions:
+            anchored.setdefault(primary_goal(name), []).append(name)
+
+    goal_x = {goal: positions[goal]["x"] for goal in goals}
+    max_goal_x = max((abs(x) for x in goal_x.values()), default=0)
+    rail_x = max_goal_x + SEMANTIC_X_GAP * 2
+    max_goal_y = max((position["y"] for position in positions.values()), default=0)
+
+    for goal, nodes in anchored.items():
+        nodes.sort(key=lambda n: (node_type[n], n))
+        for index, name in enumerate(nodes):
+            ntype = node_type[name]
+            anchor_x = goal_x.get(goal, 0)
+            anchor_y = positions.get(goal, {"y": SEMANTIC_Y_GAP * 2})["y"]
+            if ntype == "WorldModel":
+                x, y = -rail_x, anchor_y + index * 55
+            elif ntype == "Policy":
+                x, y = rail_x, anchor_y + index * 55
+            elif ntype == "CNode":
+                x, y = anchor_x - SEMANTIC_X_GAP / 2, anchor_y + SEMANTIC_Y_GAP / 2 + index * 55
+            elif ntype == "PNode":
+                x, y = anchor_x + SEMANTIC_X_GAP / 2, anchor_y + SEMANTIC_Y_GAP / 2 + index * 55
+            else:
+                x, y = anchor_x, anchor_y + SEMANTIC_Y_GAP / 2 + index * 55
+            positions[name] = {"x": x, "y": y}
+
+    perceptions = sorted(n for n, t in node_type.items() if t == "Perception")
+    place_row(perceptions, max_goal_y + SEMANTIC_Y_GAP * 2)
+
+    for name in sorted(names - set(positions)):
+        positions[name] = {"x": 0, "y": max_goal_y + SEMANTIC_Y_GAP}
+    return positions
+
+
 def build_elements(node_type, edges):
     pos = layered_positions(node_type, edges)
+    semantic_pos = semantic_positions(node_type, edges)
     nodes = []
     for name, ntype in sorted(node_type.items()):
         short = name if len(name) <= 40 else name[:38] + "…"
@@ -169,6 +379,7 @@ def build_elements(node_type, edges):
                 "id": name, "label": short, "type": ntype or "Unknown",
                 "color": NODE_COLORS.get(ntype, DEFAULT_COLOR),
                 "layer": LAYER.get(ntype, DEFAULT_LAYER),
+                "semanticPosition": semantic_pos.get(name, {"x": 0, "y": 0}),
             },
             "position": pos.get(name, {"x": 0, "y": 0}),
         })
@@ -251,6 +462,15 @@ HTML_TEMPLATE = r"""<!doctype html>
     </div>
 
     <div class="section">
+      <h2>Arrangement</h2>
+      <button class="primary" id="semanticLayout">Arrange as semantic tree</button>
+      <button id="layeredLayout">Arrange by type</button>
+      <div class="hint">Semantic tree mode places Robot Purposes, Drives,
+        Goals and subgoals top-to-bottom, with World Models and Policies on
+        side rails, C/P-Nodes near their goals, and Perceptions at the bottom.</div>
+    </div>
+
+    <div class="section">
       <h2>Arrangement config</h2>
       <button id="saveCfg">Save config (.json)</button>
       <button id="loadCfg">Load config…</button>
@@ -327,6 +547,16 @@ function applyLayered() {
   cy.layout({ name: 'preset', positions: n => PRESET_POS[n.id()] || { x: 0, y: 0 },
               animate: false, fit: true, padding: 40 }).run();
 }
+function applySemantic() {
+  const visibleNodes = cy.nodes(':visible');
+  visibleNodes.forEach(n => {
+    const position = n.data('semanticPosition');
+    if (position) n.position(position);
+  });
+  visibleNodes.layout({ name: 'preset', fit: true, padding: 40 }).run();
+}
+document.getElementById('semanticLayout').onclick = applySemantic;
+document.getElementById('layeredLayout').onclick = applyLayered;
 // Default display label (full name when short enough, else truncated) — matches
 // the Python side and is used to revert when an alias is cleared.
 function defLabel(id) { return id.length <= 40 ? id : id.slice(0, 38) + '…'; }

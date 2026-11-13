@@ -29,7 +29,7 @@ _TABULAR_FILES = {
 
 @dataclass
 class ExperimentResults:
-    """All discovered result files for one experiment or run collection."""
+    """All discovered result files for one experiment execution."""
 
     root: Path
     data: dict[str, pd.DataFrame] = field(default_factory=dict)
@@ -44,6 +44,24 @@ class ExperimentResults:
             available = ", ".join(sorted(self.data)) or "none"
             raise KeyError(f"No table named {name!r}. Available tables: {available}")
         return self.data[name]
+
+
+@dataclass
+class MultiRunResults:
+    """Independently loaded executions discovered below a collection root."""
+
+    root: Path
+    runs: dict[str, ExperimentResults] = field(default_factory=dict)
+
+    def run(self, run_id: str) -> ExperimentResults:
+        """Return one execution, raising a useful error when it is absent."""
+        try:
+            return self.runs[run_id]
+        except KeyError as error:
+            available = ", ".join(sorted(self.runs)) or "none"
+            raise KeyError(
+                f"No run named {run_id!r}. Available runs: {available}"
+            ) from error
 
 
 def _read_table(paths: list[Path], name: str) -> pd.DataFrame:
@@ -64,9 +82,9 @@ def _read_table(paths: list[Path], name: str) -> pd.DataFrame:
 def load_results(root: str | Path, *, recursive: bool = True) -> ExperimentResults:
     """Discover and load standard EMDB result files below ``root``.
 
-    ``root`` may be a single run directory or a parent containing multiple
-    runs. Model snapshots are returned as paths because their format is
-    space-specific.
+    ``root`` should identify one execution. Model snapshots are returned as
+    paths because their format is space-specific. Use
+    :func:`load_multi_run_results` for a collection of executions.
     """
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
@@ -87,3 +105,39 @@ def load_results(root: str | Path, *, recursive: bool = True) -> ExperimentResul
     result.log_files = sorted(path for path in globber("*.log") if path.is_file())
     result.yaml_files = sorted(path for path in globber("*.yaml") if path.is_file())
     return result
+
+
+def load_multi_run_results(root: str | Path) -> MultiRunResults:
+    """Discover and independently load executions below ``root``.
+
+    The first directory component below ``root`` is the run identifier. This
+    keeps job IDs and result-file directories out of the statistical identity
+    of an execution.
+    """
+    root = Path(root).expanduser().resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"Result directory does not exist: {root}")
+
+    run_paths: dict[str, Path] = {}
+    for pattern in _TABULAR_FILES.values():
+        for path in root.rglob(pattern):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(root)
+            if len(relative.parts) < 2:
+                continue
+            run_id = relative.parts[0]
+            run_paths[run_id] = root / run_id
+
+    if not run_paths:
+        raise FileNotFoundError(
+            f"No execution result files found below collection root {root}"
+        )
+
+    return MultiRunResults(
+        root=root,
+        runs={
+            run_id: load_results(run_path)
+            for run_id, run_path in sorted(run_paths.items())
+        },
+    )
