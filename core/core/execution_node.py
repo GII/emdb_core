@@ -549,14 +549,29 @@ def create_execution_node(id: int, threads: int, args=None):
     execution_node = ExecutionNode(executor, id)
     executor.add_node(execution_node)
     register_executor_thread() # The callbacks of the EventsExecutor are not visible in the Python stack
+    # spin() re-raises any exception from a callback. Log it and keep spinning: otherwise one
+    # failing callback destroys every node of this execution node while the experiment goes on.
+    # spin() only returns normally on shutdown. Give up after max_errors.
+    max_errors = 100
+    errors = 0
     try:
-        executor.spin()
+        while True:
+            try:
+                executor.spin()
+                break
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                if not rclpy.ok():
+                    break  # the context was shut down while spinning: normal termination
+                errors += 1
+                rclpy.logging.get_logger(f"execution_node_{id}").error(
+                    f"Unhandled exception ({errors}/{max_errors}): {e}\n{traceback.format_exc()}"
+                )
+                if errors >= max_errors:
+                    break
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        rclpy.logging.get_logger(f"execution_node_{id}").error(
-            f"Unhandled exception: {e}\n{traceback.format_exc()}"
-        )
     finally:
         pass
         for node in execution_node.nodes.values():
