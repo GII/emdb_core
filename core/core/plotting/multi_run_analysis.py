@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable
 
 import pandas as pd
 
+from core.plotting.goal_analysis import cumulative_goal_discovery_table
 from core.plotting.result_loader import MultiRunResults
 from core.plotting.success_analysis import (
     cumulative_purpose_achievement_table,
@@ -199,6 +200,126 @@ def multi_cumulative_purpose_achievement_table(
         tables,
         group_columns=["iteration", "domain", "purpose"],
         value_columns=["cumulative_achievements"],
+    )
+
+
+def multi_cumulative_goal_discovery_table(
+    results: MultiRunResults,
+    *,
+    by_domain: bool = False,
+    exclude_goals: Iterable[str] | None = None,
+) -> pd.DataFrame:
+    """Aggregate cumulative goal-discovery curves across runs.
+
+    Existing discovery curves are generated independently for every run,
+    aligned on the iteration axis, and forward-filled so a run without a new
+    discovery keeps its previous cumulative count.
+    """
+    results = _require_multi_run(results)
+    tables: list[tuple[str, pd.DataFrame]] = []
+    for run_id, run_results in results.runs.items():
+        table = cumulative_goal_discovery_table(
+            run_results,
+            by_domain=by_domain,
+            exclude_goals=exclude_goals,
+        ).copy()
+        tables.append((run_id, table))
+
+    frames = [table for _, table in tables if not table.empty]
+    group_columns = (
+        ["iteration", "domain"]
+        if by_domain
+        else ["iteration"]
+    )
+    value_columns = [
+        "goals_discovered",
+        "cumulative_goals_discovered",
+    ]
+
+    if not frames:
+        return pd.DataFrame(columns=[
+            *group_columns,
+            "n_runs",
+            *sum(
+                (
+                    [
+                        f"median_{column}",
+                        f"q1_{column}",
+                        f"q3_{column}",
+                        f"iqr_{column}",
+                    ]
+                    for column in value_columns
+                ),
+                [],
+            ),
+        ])
+
+    all_iterations = sorted({
+        int(iteration)
+        for table in frames
+        for iteration in table["iteration"].dropna()
+    })
+    aligned = []
+
+    if by_domain:
+        all_domains = sorted({
+            str(domain)
+            for table in frames
+            for domain in table["domain"].dropna()
+        })
+        for run_id, table in tables:
+            for domain in all_domains:
+                domain_table = table[
+                    table["domain"].astype(str).eq(domain)
+                ].sort_values("iteration")
+                if domain_table.empty:
+                    series = pd.DataFrame({
+                        "iteration": all_iterations,
+                        "goals_discovered": 0,
+                        "cumulative_goals_discovered": 0,
+                    })
+                else:
+                    domain_table = (
+                        domain_table
+                        .set_index("iteration")[value_columns]
+                        .reindex(all_iterations)
+                        .fillna({"goals_discovered": 0})
+                        .fillna({"cumulative_goals_discovered": 0})
+                    )
+                    domain_table["cumulative_goals_discovered"] = (
+                        domain_table["cumulative_goals_discovered"].ffill()
+                    )
+                    series = domain_table.reset_index()
+                series["run_id"] = run_id
+                series["domain"] = domain
+                aligned.append(series)
+    else:
+        for run_id, table in tables:
+            if table.empty:
+                series = pd.DataFrame({
+                    "iteration": all_iterations,
+                    "goals_discovered": 0,
+                    "cumulative_goals_discovered": 0,
+                })
+            else:
+                table = (
+                    table
+                    .set_index("iteration")[value_columns]
+                    .reindex(all_iterations)
+                    .fillna({"goals_discovered": 0})
+                    .fillna({"cumulative_goals_discovered": 0})
+                )
+                table["cumulative_goals_discovered"] = (
+                    table["cumulative_goals_discovered"].ffill()
+                )
+                series = table.reset_index()
+            series["run_id"] = run_id
+            aligned.append(series)
+
+    return _aggregate(
+        aligned,
+        group_columns=group_columns,
+        value_columns=value_columns,
     )
 
 

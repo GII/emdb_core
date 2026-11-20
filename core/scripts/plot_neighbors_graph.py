@@ -9,6 +9,7 @@ Why HTML instead of a static image: a real run has hundreds of nodes
 The HTML lets you:
   * show/hide whole node types / architecture layers (e.g. hide Perceptions),
   * hide, isolate or delete individual nodes (right-click a node),
+  * hide a node and all nodes downstream from it (right-click a node),
   * drag nodes to arrange them, then SAVE that arrangement to a JSON config and
     LOAD it back on the same or a similar file (positions + hidden/deleted state),
   * search for a node (Enter / Shift+Enter to cycle matches),
@@ -508,6 +509,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   <div data-act="isolate">Isolate (hide the rest)</div>
   <div data-act="rename">Rename / alias…</div>
   <div data-act="hide">Hide node</div>
+  <div data-act="hideDownstream">Hide node and downstream</div>
   <div data-act="delete">Delete node</div>
 </div>
 <div id="tip"></div>
@@ -654,10 +656,25 @@ cy.on('mouseover', 'node', evt => {
   tip.style.display = 'block';
 });
 cy.on('mouseout', 'node', () => { tip.style.display = 'none'; });
+function downstreamNodes(root) {
+  const result = cy.collection();
+  const queue = [root];
+  const seen = new Set();
+  while (queue.length) {
+    const node = queue.shift();
+    if (seen.has(node.id())) continue;
+    seen.add(node.id());
+    result.merge(node);
+    node.outgoers('node').forEach(next => queue.push(next));
+  }
+  return result;
+}
 menu.addEventListener('click', e => {
   const act = e.target.getAttribute('data-act');
   if (!act || !menuNode) return;
   if (act === 'hide') menuNode.style('display', 'none');
+  else if (act === 'hideDownstream')
+    downstreamNodes(menuNode).style('display', 'none');
   else if (act === 'delete') menuNode.remove();
   else if (act === 'isolate') { cy.nodes().style('display', 'none'); menuNode.style('display', 'element'); }
   else if (act === 'expand') {

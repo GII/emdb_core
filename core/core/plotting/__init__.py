@@ -1,6 +1,7 @@
 """Reusable result-analysis helpers for EMDB experiments."""
 
 from .multi_run_analysis import (
+    multi_cumulative_goal_discovery_table,
     multi_cumulative_purpose_achievement_table,
     multi_domain_success_summary,
     multi_purpose_achievement_table,
@@ -20,6 +21,7 @@ __all__ = [
     "MultiRunResults",
     "load_multi_run_results",
     "load_results",
+    "multi_cumulative_goal_discovery_table",
     "multi_cumulative_purpose_achievement_table",
     "multi_domain_success_summary",
     "multi_purpose_achievement_table",
