@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Iterable, Mapping
 
 import numpy as np
 import pandas as pd
 
 from core.container import Container
+from core.plotting.result_loader import ExperimentResults
 
 
 _PNODE_SUCCESS_COLUMNS = ["pnode", "iteration", "success"]
@@ -22,16 +22,16 @@ _PNODE_CUMULATIVE_COLUMNS = [
 
 
 def _load_pnode_success(
-    source: str | Path | pd.DataFrame,
+    results: ExperimentResults,
+    events: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Load and normalize a P-Node success table."""
-    if isinstance(source, pd.DataFrame):
-        table = source.copy()
-    else:
-        path = Path(source).expanduser()
-        if not path.is_file():
-            raise FileNotFoundError(f"P-Node success file does not exist: {path}")
-        table = pd.read_csv(path, sep="\t", comment="#")
+    if not isinstance(results, ExperimentResults):
+        raise TypeError(
+            "P-Node analysis requires an ExperimentResults object. "
+            "Use load_results(...) first."
+        )
+    table = results.table("pnodes_success").copy()
 
     if set(_PNODE_SUCCESS_COLUMNS).issubset(table.columns):
         result = table[_PNODE_SUCCESS_COLUMNS].copy()
@@ -61,23 +61,34 @@ def _load_pnode_success(
 
 
 def pnode_success_table(
-    source: str | Path | pd.DataFrame,
+    results: ExperimentResults,
 ) -> pd.DataFrame:
     """Return one normalized success event row for every P-Node occurrence."""
-    return _load_pnode_success(source)
+    return _load_pnode_success(results)
 
 
 def cumulative_pnode_success_table(
-    source: str | Path | pd.DataFrame,
+    results: ExperimentResults,
+    events: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return cumulative success, failure, and net points for each P-Node.
 
-    Each P-Node is represented at every iteration from its first observation
-    through the final iteration in the input. Values are carried forward on
-    iterations without an event, so plotting the table preserves flat
-    sections.
+    If ``events`` is supplied, it should be the output of
+    :func:`pnode_success_table` and is reused without loading the result table
+    again. Each P-Node is represented at every iteration from its first
+    observation through the final iteration in the input. Values are carried
+    forward on iterations without an event, so plotting the table preserves
+    flat sections.
     """
-    events = _load_pnode_success(source)
+    if events is None:
+        events = _load_pnode_success(results)
+    else:
+        missing = set(_PNODE_SUCCESS_COLUMNS) - set(events.columns)
+        if missing:
+            raise ValueError(
+                f"P-Node events table is missing columns: {sorted(missing)}"
+            )
+        events = events[_PNODE_SUCCESS_COLUMNS].copy()
     if events.empty:
         return pd.DataFrame(columns=_PNODE_CUMULATIVE_COLUMNS)
 

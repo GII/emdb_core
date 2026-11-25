@@ -56,7 +56,12 @@ def trial_success_table(results: ExperimentResults) -> pd.DataFrame:
 
 
 def goal_purpose_lookup(results: ExperimentResults) -> pd.DataFrame:
-    """Return the graph-derived lookup from every goal to its drive purpose."""
+    """Return each goal's drive purpose and top-level status.
+
+    A goal is top-level when it has a direct ``Drive`` neighbor in the LTM
+    graph. Goals that reach a drive only through other ``Goal`` neighbors are
+    downstream goals.
+    """
     neighbors = _require_results(results).table("neighbors_full")
     required = {"NodeType", "NodeName", "NeighborName", "NeighborType"}
     missing = required - set(neighbors.columns)
@@ -75,7 +80,7 @@ def goal_purpose_lookup(results: ExperimentResults) -> pd.DataFrame:
     drives = set(
         neighbors.loc[neighbors["NodeType"].eq("Drive"), "NodeName"].astype(str)
     )
-    lookup: list[dict[str, str | None]] = []
+    lookup: list[dict[str, str | bool | None]] = []
     lookup.extend({"goal": drive, "purpose": drive} for drive in drives)
     for goal in goals:
         pending = deque([goal])
@@ -92,9 +97,16 @@ def goal_purpose_lookup(results: ExperimentResults) -> pd.DataFrame:
                     break
                 if neighbor_type == "Goal":
                     pending.append(neighbor)
-        lookup.append({"goal": goal, "purpose": purpose})
+        lookup.append({
+            "goal": goal,
+            "purpose": purpose,
+            "top_level": any(
+                neighbor_type == "Drive"
+                for _, neighbor_type in graph.get(goal, [])
+            ),
+        })
 
-    return pd.DataFrame(lookup, columns=["goal", "purpose"])
+    return pd.DataFrame(lookup, columns=["goal", "purpose", "top_level"])
 
 
 def purpose_achievement_table(results: ExperimentResults) -> pd.DataFrame:
@@ -103,13 +115,14 @@ def purpose_achievement_table(results: ExperimentResults) -> pd.DataFrame:
     Goal occurrences and achievement tallies come from the existing
     :func:`goal_achievement_table`. The neighbor graph is consulted once to
     build a goal-to-purpose lookup; it is not traversed per goodness row.
+    ``top_level`` is true only for goals with a direct Drive neighbor.
     """
     results = _require_results(results)
     achievements = goal_achievement_table(results.table("goodness"))
     lookup = goal_purpose_lookup(results)
     result = achievements.merge(lookup, on="goal", how="left", validate="many_to_one")
     return result[
-        ["iteration", "domain", "goal", "purpose", "achieved"]
+        ["iteration", "domain", "goal", "purpose", "top_level", "achieved"]
     ]
 
 
@@ -117,9 +130,17 @@ def purpose_success_summary(
     results: ExperimentResults,
     *,
     by_domain: bool = True,
+    top_level_only: bool = True,
 ) -> pd.DataFrame:
-    """Summarize goal achievement rates by resolved drive purpose."""
+    """Summarize achievement rates by resolved drive purpose.
+
+    By default, only top-level goals are included because this is a purpose
+    performance metric. Set ``top_level_only=False`` to include downstream
+    goal rewards as well.
+    """
     events = purpose_achievement_table(_require_results(results))
+    if top_level_only:
+        events = events[events["top_level"].fillna(False)]
     group_columns = ["purpose"]
     if by_domain:
         group_columns.insert(0, "domain")
@@ -167,9 +188,18 @@ def domain_success_summary(results: ExperimentResults) -> pd.DataFrame:
 
 def cumulative_purpose_achievement_table(
     results: ExperimentResults,
+    *,
+    top_level_only: bool = True,
 ) -> pd.DataFrame:
-    """Return cumulative achievements by purpose, domain, and iteration."""
+    """Return cumulative achievements by purpose, domain, and iteration.
+
+    Cumulative achievements default to top-level goals only, measuring actual
+    purpose achievement rather than progress through learned subgoals. Set
+    ``top_level_only=False`` to include downstream goals explicitly.
+    """
     events = purpose_achievement_table(_require_results(results))
+    if top_level_only:
+        events = events[events["top_level"].fillna(False)]
     columns = [
         "iteration",
         "domain",
@@ -204,6 +234,10 @@ def rewarded_iteration_rate_table(
 
     An iteration is rewarded for a domain/purpose pair when at least one goal
     associated with that purpose is achieved during that iteration and domain.
+    This intentionally includes downstream goals, so it measures whether the
+    learned goal chain produces rewards, not whether the purpose itself was
+    achieved. Use :func:`cumulative_purpose_achievement_table` for the
+    top-level purpose-achievement metric.
     The rate is calculated over the latest ``window`` observed iterations for
     that pair. The first rows use all available observations until the window
     is full.
