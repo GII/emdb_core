@@ -13,8 +13,8 @@ The HTML lets you:
   * drag nodes to arrange them, then SAVE that arrangement to a JSON config and
     LOAD it back on the same or a similar file (positions + hidden/deleted state),
   * search for a node (Enter / Shift+Enter to cycle matches),
-  * export a PNG, print the full graph to PDF, or export editable draw.io XML,
-    choosing the output file name.
+  * export the visible graph as PNG or fitted vector SVG, print the full graph
+    to PDF, or export editable draw.io XML, choosing the output file name.
 
 The default layout is "layered by type": one horizontal band per node type.
 The generated page also offers a semantic layout that arranges the
@@ -408,6 +408,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>__TITLE__</title>
 <script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/cytoscape-svg@0.4.0/cytoscape-svg.js"></script>
 <style>
   :root { --bg:#f7f8fa; --panel:#ffffff; --line:#e2e5ea; --ink:#222; --muted:#666; }
   * { box-sizing: border-box; }
@@ -492,6 +493,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       <h2>Export</h2>
       <input id="fname" type="text" value="__DEFAULT_FILENAME__"/>
       <button class="primary" id="png">Download PNG</button>
+      <button id="svg">Download SVG</button>
       <button id="pdf">Print / Save as PDF</button>
       <button id="drawio">Download draw.io XML (editable)</button>
     </div>
@@ -718,9 +720,18 @@ function download(blobUrl, name) {
   const a = document.createElement('a'); a.href = blobUrl; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
 }
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  download(url, name);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 document.getElementById('png').onclick = () => {
   const uri = cy.png({ full: true, scale: 2, bg: '#ffffff' });
   download(uri, fname('png'));
+};
+document.getElementById('svg').onclick = () => {
+  const svg = cy.svg({ full: true, scale: 1, bg: '#ffffff' });
+  downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), fname('svg'));
 };
 document.getElementById('pdf').onclick = () => {
   // Print the FULL graph (not just the on-screen viewport): render it to an
