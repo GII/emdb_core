@@ -35,7 +35,12 @@ def _run_tables(
     results = _require_multi_run(results)
     tables = []
     for run_id, run_results in results.runs.items():
-        table = generator(run_results, **kwargs).copy()
+        previously_loaded = set(run_results.data)
+        try:
+            table = generator(run_results, **kwargs).copy()
+        finally:
+            for name in set(run_results.data) - previously_loaded:
+                run_results.release_table(name)
         table.insert(0, "run_id", run_id)
         tables.append(table)
     return tables
@@ -218,11 +223,16 @@ def multi_cumulative_goal_discovery_table(
     results = _require_multi_run(results)
     tables: list[tuple[str, pd.DataFrame]] = []
     for run_id, run_results in results.runs.items():
-        table = cumulative_goal_discovery_table(
-            run_results,
-            by_domain=by_domain,
-            exclude_goals=exclude_goals,
-        ).copy()
+        was_loaded = "goodness" in run_results.data
+        try:
+            table = cumulative_goal_discovery_table(
+                run_results,
+                by_domain=by_domain,
+                exclude_goals=exclude_goals,
+            ).copy()
+        finally:
+            if not was_loaded:
+                run_results.release_table("goodness")
         tables.append((run_id, table))
 
     frames = [table for _, table in tables if not table.empty]
@@ -279,15 +289,16 @@ def multi_cumulative_goal_discovery_table(
                         "cumulative_goals_discovered": 0,
                     })
                 else:
-                    domain_table = (
-                        domain_table
-                        .set_index("iteration")[value_columns]
-                        .reindex(all_iterations)
-                        .fillna({"goals_discovered": 0})
-                        .fillna({"cumulative_goals_discovered": 0})
+                    domain_table = domain_table.set_index("iteration")[
+                        value_columns
+                    ].reindex(all_iterations)
+                    domain_table["goals_discovered"] = (
+                        domain_table["goals_discovered"].fillna(0)
                     )
                     domain_table["cumulative_goals_discovered"] = (
-                        domain_table["cumulative_goals_discovered"].ffill()
+                        domain_table["cumulative_goals_discovered"]
+                        .ffill()
+                        .fillna(0)
                     )
                     series = domain_table.reset_index()
                 series["run_id"] = run_id
@@ -302,15 +313,12 @@ def multi_cumulative_goal_discovery_table(
                     "cumulative_goals_discovered": 0,
                 })
             else:
-                table = (
-                    table
-                    .set_index("iteration")[value_columns]
-                    .reindex(all_iterations)
-                    .fillna({"goals_discovered": 0})
-                    .fillna({"cumulative_goals_discovered": 0})
+                table = table.set_index("iteration")[value_columns].reindex(
+                    all_iterations
                 )
+                table["goals_discovered"] = table["goals_discovered"].fillna(0)
                 table["cumulative_goals_discovered"] = (
-                    table["cumulative_goals_discovered"].ffill()
+                    table["cumulative_goals_discovered"].ffill().fillna(0)
                 )
                 series = table.reset_index()
             series["run_id"] = run_id

@@ -37,13 +37,34 @@ class ExperimentResults:
     model_files: list[Path] = field(default_factory=list)
     log_files: list[Path] = field(default_factory=list)
     yaml_files: list[Path] = field(default_factory=list)
+    lazy: bool = False
 
     def table(self, name: str) -> pd.DataFrame:
-        """Return a loaded table, raising a useful error when it is absent."""
-        if name not in self.data:
-            available = ", ".join(sorted(self.data)) or "none"
+        """Return a loaded table, resolving it from disk when configured lazy."""
+        if name in self.data:
+            return self.data[name]
+        if self.lazy and name in self.paths:
+            self.data[name] = _read_table(self.paths[name], name)
+            return self.data[name]
+        if name not in self.paths:
+            available = ", ".join(self.available_tables) or "none"
             raise KeyError(f"No table named {name!r}. Available tables: {available}")
-        return self.data[name]
+        raise KeyError(f"Table {name!r} has not been loaded.")
+
+    @property
+    def available_tables(self) -> list[str]:
+        """Names of discovered tables, whether loaded or still on disk."""
+        return sorted(set(self.paths) | set(self.data))
+
+    def release_table(self, name: str) -> None:
+        """Release one cached table so a lazy result bundle can free memory."""
+        if self.lazy:
+            self.data.pop(name, None)
+
+    def release_loaded_tables(self) -> None:
+        """Release all cached tables for a lazily loaded execution."""
+        if self.lazy:
+            self.data.clear()
 
 
 @dataclass
@@ -79,7 +100,12 @@ def _read_table(paths: list[Path], name: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def load_results(root: str | Path, *, recursive: bool = True) -> ExperimentResults:
+def load_results(
+    root: str | Path,
+    *,
+    recursive: bool = True,
+    lazy: bool = False,
+) -> ExperimentResults:
     """Discover and load standard EMDB result files below ``root``.
 
     ``root`` should identify one execution. Model snapshots are returned as
@@ -91,13 +117,14 @@ def load_results(root: str | Path, *, recursive: bool = True) -> ExperimentResul
         raise FileNotFoundError(f"Result directory does not exist: {root}")
 
     globber = root.rglob if recursive else root.glob
-    result = ExperimentResults(root=root)
+    result = ExperimentResults(root=root, lazy=lazy)
 
     for name, pattern in _TABULAR_FILES.items():
         paths = sorted(path for path in globber(pattern) if path.is_file())
         if paths:
             result.paths[name] = paths
-            result.data[name] = _read_table(paths, name)
+            if not lazy:
+                result.data[name] = _read_table(paths, name)
 
     result.model_files = sorted(
         path for path in globber("models_save_*/*.pth") if path.is_file()
@@ -108,11 +135,12 @@ def load_results(root: str | Path, *, recursive: bool = True) -> ExperimentResul
 
 
 def load_multi_run_results(root: str | Path) -> MultiRunResults:
-    """Discover and independently load executions below ``root``.
+    """Discover executions below ``root`` and defer reading their tables.
 
     The first directory component below ``root`` is the run identifier. This
     keeps job IDs and result-file directories out of the statistical identity
-    of an execution.
+    of an execution. Tables are read only when requested with
+    :meth:`ExperimentResults.table`.
     """
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
@@ -137,7 +165,7 @@ def load_multi_run_results(root: str | Path) -> MultiRunResults:
     return MultiRunResults(
         root=root,
         runs={
-            run_id: load_results(run_path)
+            run_id: load_results(run_path, lazy=True)
             for run_id, run_path in sorted(run_paths.items())
         },
     )
