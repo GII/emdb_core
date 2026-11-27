@@ -1,7 +1,30 @@
 import importlib
+import sys
 import math
+import time
+import numpy as np
 from cognitive_node_interfaces.msg import Perception, Actuation, ObjectParameters
 from enum import Enum
+
+
+def resolve_seed(seed):
+    """
+    Resolve a random number generator seed, never applying a fixed default.
+
+    A falsy seed (``None`` or ``0``) means "no seed was requested": in that case
+    a fresh, non-deterministic seed is derived from the current time
+    (``time.time_ns()``) so that each run is genuinely random. The generated
+    value is returned (not just applied) so callers can log it and reproduce the
+    run later by passing it back explicitly. Any non-zero value is used as-is.
+
+    :param seed: The requested seed. ``None`` or ``0`` request a random run.
+    :type seed: int or None
+    :return: A concrete, non-zero integer seed in ``[1, 2**32 - 1]``.
+    :rtype: int
+    """
+    if not seed:
+        return int(time.time_ns() % (2 ** 32 - 1)) + 1
+    return int(seed)
 
 def class_from_classname(class_name):
     """
@@ -24,7 +47,7 @@ def perception_dict_to_msg(perception_dict):
     :param perception_dict: Dictionary that contais the perceptions.
     :type perception_dict: dict
     :return: The ROS message with the perception.
-    :rtype: cognitve_node_interfaces.msg.Perception
+    :rtype: cognitive_node_interfaces.msg.Perception
     """
     msg = Perception()
     if perception_dict:
@@ -40,7 +63,7 @@ def actuation_dict_to_msg(actuation_dict):
     :param actuation_dict: Dictionary that contais the actuation signal.
     :type actuation_dict: dict
     :return: The ROS message with the actuation.
-    :rtype: cognitve_node_interfaces.msg.Actuation
+    :rtype: cognitive_node_interfaces.msg.Actuation
     """
     msg = Actuation()
     if actuation_dict:
@@ -54,11 +77,11 @@ def dict_to_msg(msg, object_dict):
     Transform an object dictionary into a ROS message.
 
     :param msg: Message to transform
-    :type msg: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :type msg: cognitive_node_interfaces.msg.Perception or cognitive_node_interfaces.msg.Actuation
     :param object_dict: Dictionary that contais the data.
     :type object_dict: dict
     :return: The ROS message with the perception.
-    :rtype: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :rtype: cognitive_node_interfaces.msg.Perception or cognitive_node_interfaces.msg.Actuation
     """
 
     if object_dict:
@@ -90,7 +113,7 @@ def perception_msg_to_dict(msg):
     Transform a ROS message that contains a perception into a dictionary.
 
     :param msg: The ROS message with the perception.
-    :type msg: cognitve_node_interfaces.msg.Perception
+    :type msg: cognitive_node_interfaces.msg.Perception
     :return: The dictionary with the perceptions.
     :rtype: dict
     """
@@ -103,7 +126,7 @@ def actuation_msg_to_dict(msg):
     Transform a ROS message that contains an actuation into a dictionary.
 
     :param msg: The ROS message with the perception.
-    :type msg: cognitve_node_interfaces.msg.Actuation
+    :type msg: cognitive_node_interfaces.msg.Actuation
     :return: The dictionary with the actuation.
     :rtype: dict
     """
@@ -116,7 +139,7 @@ def msg_to_dict(msg):
     Transform a ROS message that contains an object list into a dictionary.
 
     :param msg: The ROS message containing the object list.
-    :type msg: cognitve_node_interfaces.msg.Perception or cognitve_node_interfaces.msg.Actuation
+    :type msg: cognitive_node_interfaces.msg.Perception or cognitive_node_interfaces.msg.Actuation
     :return: A dictionary representation of the object list.
     :rtype: dict
     """
@@ -153,38 +176,67 @@ def separate_perceptions(perception):
     :rtype: list
     """
     perceptions = []
-    for i in range(max([len(sensor) for sensor in perception.values()])):
-            perception_line = {} 
-            for sensor, value in perception.items():
-                sid = i % len(value)
-                perception_line[sensor + str(sid)] = value[sid]
-            perceptions.append(perception_line)
+    if not perception:
+        return perceptions
+
+    sensor_sizes = []
+    for sensor_values in perception.values():
+        if sensor_values is None:
+            return perceptions
+        size = len(sensor_values)
+        if size == 0:
+            return perceptions
+        sensor_sizes.append(size)
+
+    for i in range(max(sensor_sizes)):
+        perception_line = {}
+        for sensor, value in perception.items():
+            sid = i % len(value)
+            perception_line[sensor + str(sid)] = value[sid]
+        perceptions.append(perception_line)
 
     return perceptions
 
-def compare_perceptions(input_1, input_2, thresh=0.01):
+def compare_perceptions(input_1, input_2, thresh=0.01, label_mode="equal"):
     """
     Return True if both perceptions have the same value. False otherwise.
 
-    :param sensing: Sensing in the current iteration.
-    :type sensing: dict
-    :param old_sensing: Sensing in the last iteration.
-    :type old_sensing: dict
-    :return: Boolean that indicates if there is a sensorial change.
+    :param input_1: The first perception.
+    :type input_1: core.container.Container
+    :param input_2: The second perception.
+    :type input_2: core.container.Container
+    :param thresh: The threshold for comparison.
+    :type thresh: float
+    :param label_mode: The mode for comparing labels.
+                        - "equal": labels must be the same for both perceptions.
+                        - "subset": labels of one perception must be a subset of the other.
+    :type label_mode: str   
+    :return: Boolean that indicates if the perceptions are equivalent.
     :rtype: bool
     """
 
-    for sensor in input_1:
-        for perception_1, perception_2 in zip(input_1[sensor], input_2[sensor]):
-            if isinstance(perception_1, dict):
-                for attribute in perception_1:
-                    difference = abs(perception_1[attribute] - perception_2[attribute])
-                    if difference > thresh:
-                        return False
-            else:
-                if abs(perception_1[0] - perception_2[0]) > thresh:
-                    return False
-    return True
+    labels_1 = set(input_1.feature_labels)
+    labels_2 = set(input_2.feature_labels)
+    
+
+    if label_mode == "equal":
+        labels = labels_1
+        if labels_1 != labels_2:
+            return False
+    elif label_mode == "subset":
+        if not (labels_1.issubset(labels_2) or labels_2.issubset(labels_1)):
+            return False
+        labels = labels_1.intersection(labels_2)
+    label_list = list(labels)
+    data_1 = input_1.read().sel(features=label_list).values
+    data_2 = input_2.read().sel(features=label_list).values
+
+    if data_1.shape[0] != data_2.shape[0]:
+        return False
+
+    diff = abs(data_1 - data_2)
+    max_diff = np.max(diff)
+    return max_diff <= thresh
 
 class EncodableDecodableEnum(Enum):
     """Enum class that can be encoded and decoded to/from a normalized value."""
@@ -230,3 +282,29 @@ class EncodableDecodableEnum(Enum):
             if member.value == index:
                 return member.name
         raise ValueError(f"No matching class for normalized value {value}")
+
+
+def log_level_args(argv=None):
+    """
+    Extracts the --log-level ROS arguments from a command line, so that they can be
+    forwarded to the processes spawned by a node (e.g. the execution nodes).
+
+    :param argv: Command line arguments, defaults to sys.argv.
+    :type argv: list
+    :return: Arguments for rclpy.init with the log levels, or None if there are none.
+    :rtype: list or None
+    """
+    argv = sys.argv if argv is None else argv
+    levels = []
+    in_ros_args = False
+    tokens = iter(argv)
+    for token in tokens:
+        if token == "--ros-args":
+            in_ros_args = True
+        elif token == "--":
+            in_ros_args = False
+        elif in_ros_args and token == "--log-level":
+            value = next(tokens, None)
+            if value is not None:
+                levels += ["--log-level", value]
+    return [argv[0] if argv else "", "--ros-args", *levels] if levels else None

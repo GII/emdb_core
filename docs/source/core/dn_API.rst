@@ -11,7 +11,7 @@ Dummy nodes
 +++++++++++
 
 Python scripts for the implementation of dummy nodes.
-The dummy nodes avaliable are:
+The dummy nodes available are:
 
 **Drive**
 

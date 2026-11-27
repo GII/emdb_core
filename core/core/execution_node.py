@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import rclpy
 import yaml
 import importlib
@@ -11,6 +12,11 @@ from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 
 from rclpy.executors import MultiThreadedExecutor
+try:
+    # Event-driven executor implemented in C++ (ROS 2 Jazzy and later).
+    from rclpy.experimental import EventsExecutor
+except ImportError:
+    EventsExecutor = None
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 
@@ -18,16 +24,35 @@ from core.service_client import ServiceClient
 
 from std_msgs.msg import String
 from core_interfaces.srv import AddExecutionNode
-from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution
-from core.service_client import ServiceClient
+from core_interfaces.srv import CreateNode, ReadNode, DeleteNode, SaveNode, LoadNode, SaveConfig, StopExecution, AddNodeToLTM, DeleteNodeFromLTM
+from core.service_client import ServiceClient, ServiceClientAsync
+from core.blocking_wait_check import register_executor_thread
 
 from core.config import saved_data_dir
 from core.utils import class_from_classname
+from core.cognitive_node import neighbors_from_lists
+
+# Services that every execution node offers to the commander: {name suffix: service type}
+EXECUTION_NODE_SERVICES = {
+    'create': CreateNode,
+    'read': ReadNode,
+    'delete': DeleteNode,
+    'save': SaveNode,
+    'load': LoadNode,
+    'read_all_nodes': ReadNode,
+    'save_all_nodes': SaveNode,
+    'stop_execution': StopExecution,
+}
+# Topic where each execution node announces (with its id) that the commander can use it
+EXECUTION_NODE_READY_TOPIC = 'execution_node_ready'
+READY_CHECK_PERIOD = 0.01  # Seconds between discovery checks
+WAIT_WARNING_PERIOD = 5.0  # Seconds between warnings while waiting for discovery
 
 class ExecutionNode(Node):
     """
     This class represents an execution node, which can execute several cognitive nodes.
-    It is subscribed to the topic where the commander node sends commands.
+    It receives the commands of the commander node through services, and it stops when its identifier
+    is published in the topic stop_execution_node.
     """
 
     def __init__(self, executor, id):
@@ -53,6 +78,8 @@ class ExecutionNode(Node):
         self.nodes = {}
         self.executor = executor
         self.cbgroup_server=MutuallyExclusiveCallbackGroup()
+        self.cbgroup_client=MutuallyExclusiveCallbackGroup()
+        self.ltm_clients = {}
         
 
         self.get_logger().info('Creating execution services')
@@ -121,7 +148,41 @@ class ExecutionNode(Node):
             10
         )      
 
+        # Ready topic for the Commander Node (see check_commander_discovered)
+        self.ready_publisher = self.create_publisher(String, EXECUTION_NODE_READY_TOPIC, 10)
+        self.next_ready_warning = time.monotonic() + WAIT_WARNING_PERIOD
+        self.ready_timer = self.create_timer(READY_CHECK_PERIOD, self.check_commander_discovered, callback_group=self.cbgroup_client)
+
         self.get_logger().info('Execution node created')
+
+    def check_commander_discovered(self):
+        """
+        Timer callback that announces in the ready topic that the commander can use this
+        execution node, once this node has discovered the commander.
+
+        A service response is lost if the server sends it before it has discovered the
+        response reader of the client (rmw_fastrtps: "client will not receive response"),
+        and the client then waits for it forever. To avoid it, the commander creates its
+        clients for this execution node before launching it, and this node announces that
+        it is ready only when it sees the commander clients of all its services and its
+        ready publisher is matched with the commander subscription. The commander, in turn,
+        waits until its clients see the services (see CommanderNode.check_execution_nodes).
+        """
+        missing = [
+            service for service in EXECUTION_NODE_SERVICES
+            if self.count_clients('execution_node_' + str(self.id) + '/' + service) < 1
+        ]
+        if self.ready_publisher.get_subscription_count() < 1:
+            missing.append(f'subscription to {EXECUTION_NODE_READY_TOPIC}')
+        if missing:
+            if time.monotonic() >= self.next_ready_warning:
+                self.get_logger().warning(f"Waiting to discover the commander. Missing: {', '.join(missing)}")
+                self.next_ready_warning += WAIT_WARNING_PERIOD
+            return
+        self.ready_timer.cancel()
+        self.destroy_timer(self.ready_timer)
+        self.ready_publisher.publish(String(data=str(self.id)))
+        self.get_logger().info('Commander discovered, execution node ready')
 
     
     async def create_node(self, request, response):
@@ -149,7 +210,7 @@ class ExecutionNode(Node):
         self.get_logger().info(f'Creating new {class_name} {name}...')
 
         try:
-            new_node = class_from_classname(class_name)(name, **parameters)
+            new_node = class_from_classname(class_name)(name, class_name=class_name, **parameters)
         except Exception as e:
             self.get_logger().error(f"Unhandled exception: {e}\n{traceback.format_exc()}")
             response.created = False
@@ -157,15 +218,66 @@ class ExecutionNode(Node):
 
         self.nodes[name] = new_node
 
-        self.executor.add_node(new_node)
+        # Cognitive nodes are registered in the LTM and receive the neighbors it assigns (e.g. their
+        # perceptions) before they are added to the executor: a node never works with a partially
+        # defined set of neighbors.
+        if self.registered_in_ltm(new_node):
+            await self.register_in_ltm(new_node)
 
-        register_method = getattr(new_node, 'register_in_LTM', None)
-        if callable(register_method):
-            await register_method({})
+        self.executor.add_node(new_node)
 
         self.get_logger().info(f'Added node: {name}.')
         response.created = True
         return response
+
+    @staticmethod
+    def registered_in_ltm(node):
+        """
+        Tells whether a node is registered in the LTM: cognitive nodes are, cognitive processes are not.
+
+        :param node: The node.
+        :type node: rclpy.node.Node
+        :return: True if the node is registered in the LTM.
+        :rtype: bool
+        """
+        return callable(getattr(node, 'ltm_registration_data', None))
+
+    async def register_in_ltm(self, node):
+        """
+        Registers a cognitive node in its LTM and applies the neighbors assigned by the LTM.
+
+        The node is not spinning yet, so the request is sent through a client of the execution node.
+
+        :param node: The cognitive node.
+        :type node: core.cognitive_node.CognitiveNode
+        """
+        service_name = f"{node.LTM_id}/add_node"
+        if service_name not in self.ltm_clients:
+            self.ltm_clients[service_name] = ServiceClientAsync(self, AddNodeToLTM, service_name, self.cbgroup_client)
+        response = await self.ltm_clients[service_name].send_request_async(
+            name=node.name, node_type=node.node_type, data=node.ltm_registration_data()
+        )
+        node.apply_neighbors(neighbors_from_lists(response.neighbors_name, response.neighbors_type))
+
+    async def unregister_from_ltm(self, node):
+        """
+        Removes a cognitive node from its LTM.
+
+        The node may have been removed from the executor already, so the request is sent through a
+        client of the execution node, like in register_in_ltm.
+
+        :param node: The cognitive node.
+        :type node: core.cognitive_node.CognitiveNode
+        :return: True if the LTM deleted the node.
+        :rtype: bool
+        """
+        service_name = f"{node.LTM_id}/delete_node"
+        if service_name not in self.ltm_clients:
+            self.ltm_clients[service_name] = ServiceClientAsync(self, DeleteNodeFromLTM, service_name, self.cbgroup_client)
+        response = await self.ltm_clients[service_name].send_request_async(name=node.name)
+        if not response.deleted:
+            self.get_logger().warning(f'The LTM did not delete the node {node.name}.')
+        return response.deleted
 
     def read_node(self, request, response):
         """
@@ -192,7 +304,7 @@ class ExecutionNode(Node):
 
         return response
 
-    def delete_node(self, request, response):
+    async def delete_node(self, request, response):
         """
         Delete a cognitive node by its name.
 
@@ -207,10 +319,15 @@ class ExecutionNode(Node):
 
         self.get_logger().info(f'Deleting node: {name}...')
 
-        if name in self.nodes:
+        if name in self.nodes and not self.registered_in_ltm(self.nodes[name]):
+            # Destroying a cognitive process here would wait for its loop thread, which may be waiting for
+            # responses that only this executor can deliver (see MainLoop.destroy_node)
+            self.get_logger().error(f'{name} is a cognitive process: it cannot be deleted, stop the execution instead.')
+            response.deleted = False
+        elif name in self.nodes:
             node_to_delete = self.nodes.pop(name)
             self.executor.remove_node(node_to_delete)
-            node_to_delete.remove_from_LTM()
+            await self.unregister_from_ltm(node_to_delete)
             node_to_delete.destroy_node()
             self.get_logger().info(f'Deleted node: {name}.')
             response.deleted = True
@@ -355,7 +472,7 @@ class ExecutionNode(Node):
         return response
 
 
-    def stop_execution(self, request, response):
+    async def stop_execution(self, request, response):
         """
         Stop the execution of all cognitive nodes in this execution node.
 
@@ -370,9 +487,18 @@ class ExecutionNode(Node):
         self.get_logger().info(f'Stopping execution of every cognitive nodes in execution node {self.id}')
 
         for name in list(self.nodes.keys()):
-            node_to_delete = self.nodes.pop(name)
-            node_to_delete.remove_from_LTM()
-            node_to_delete.destroy_node()
+            node = self.nodes[name]
+            if not self.registered_in_ltm(node):
+                # Cognitive processes are only asked to stop. They are destroyed when the execution node
+                # shuts down (see create_execution_node), outside the callbacks: destroying them here would
+                # wait for their loop thread (see MainLoop.destroy_node)
+                node.stop = True
+                self.get_logger().info(f'Asked the process {name} to stop.')
+                continue
+            del self.nodes[name]
+            self.executor.remove_node(node)
+            await self.unregister_from_ltm(node)
+            node.destroy_node()
             self.get_logger().info(f'Stopped execution of node: {name}.')
 
         return response
@@ -395,13 +521,22 @@ def create_execution_node(id: int, threads: int, args=None):
 
     :param id: The identifier for the execution node.
     :type id: int
-    :param threads: The number of threads for the executor.
+    :param threads: The number of threads for the executor. It only applies when the
+        EventsExecutor (ROS 2 Jazzy and later) is not available.
     :type threads: int
     :param args: Additional arguments for rclpy initialization, defaults to None.
     :type args: list
     """
     rclpy.init(args=args)
-    if threads>1:
+    if EventsExecutor is not None:
+        # The EventsExecutor is much cheaper than the Python executors (whose CPU time is mostly
+        # spent rebuilding wait sets) and it supports coroutine callbacks, so it is used whenever
+        # it is available. It is single threaded: the threads parameter does not apply.
+        rclpy.logging.get_logger(f"execution_node_{id}").info(
+            f"Creating events executor (requested threads: {threads})."
+        )
+        executor = EventsExecutor()
+    elif threads>1:
         rclpy.logging.get_logger(f"execution_node_{id}").info(
             f"Creating multi-threaded executor with {threads} threads."
         )
@@ -413,6 +548,7 @@ def create_execution_node(id: int, threads: int, args=None):
         executor = SingleThreadedExecutor() # TODO: TBD if it is single or multi threaded executor.
     execution_node = ExecutionNode(executor, id)
     executor.add_node(execution_node)
+    register_executor_thread() # The callbacks of the EventsExecutor are not visible in the Python stack
     try:
         executor.spin()
     except KeyboardInterrupt:

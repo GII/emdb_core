@@ -2,25 +2,45 @@ from rclpy.time import Time
 import os
 import yaml
 import threading
+from collections import deque
 
-from core.service_client import ServiceClient
+from core.container import Container
+from cognitive_nodes.episodic_buffer import EpisodicBuffer
+from cognitive_nodes.episode import container_msg_to_episode
+
+
 from cognitive_node_interfaces.msg import Activation
 from cognitive_node_interfaces.srv import SendSpace, SaveModel
 from cognitive_node_interfaces.msg import SuccessRate
 from core_interfaces.srv import GetNodeFromLTM
-from core.utils import perception_msg_to_dict, separate_perceptions
-from cognitive_nodes.episodic_buffer import EpisodicBuffer
-from cognitive_nodes.episode import episode_msg_to_obj
 
 class File():
-    """A MDB file."""
+    """
+    A file with output data of an experiment. The configuration file of the experiment selects them (LTM: Files).
+    Files are opened and written by the thread of the main loop.
+    """
 
-    def __init__(self, ident, file_name, node, **params):
-        """Init attributes when a new object is created."""
+    def __init__(self, ident, file_name, node, flush_freq=0, **params):
+        """
+        Init attributes when a new object is created.
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file. A number is added before the extension when it is opened.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param flush_freq: Number of writes between flushes, defaults to 0 (never).
+        :type flush_freq: int
+        :param params: Other parameters, not used.
+        :type params: dict
+        """
         self.ident = ident
         self.file_name = file_name
         self.file_object = None
         self.node = node
+        self.write_count = 0
+        self.flush_freq = flush_freq
 
     def __getstate__(self):
         """
@@ -54,14 +74,27 @@ class File():
         raise NotImplementedError
     
     def write_episode(self, msg):
-        "Writes data related to an episode"
+        """
+        Writes data related to an episode. It does nothing by default.
+
+        :param msg: The episode.
+        :type msg: core_interfaces.msg.Container
+        """
         return None
 
     def _write_file(self, data):
-        """Write data to the file."""
+        """
+        Write data to the file.
+
+        :param data: The data.
+        :type data: str
+        """
         if self.file_object:
             self.file_object.write(data)
-            self.file_object.flush()
+            self.write_count += 1
+            if self.flush_freq > 0 and self.write_count % self.flush_freq == 0:
+                self.file_object.flush()
+
 
 class FileGoodness(File):
     """A file where several goodness statistics about an experiment are stored."""
@@ -75,7 +108,10 @@ class FileGoodness(File):
 
     def write(self):
         """Write statistics data."""
-        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(self.node.current_episode.reward_list.items())}
+        reward_list = self.node.current_episode.reward_list
+        if reward_list is None:
+            return
+        formatted_goals = {goal: f"{reward:.1f}" for goal, reward in sorted(reward_list.items())}
         current_world = self.node.current_world if self.node.current_world else "None"
         self._write_file(
             str(self.node.iteration)
@@ -117,22 +153,26 @@ class FilePNodesSuccess(File):
             self.node.pnodes_success[pnode] = None
 
 class FileTrialsSuccess(File):
-    """A file that records whether a P-node's activation has been successful or not."""
+    """A file with a row per trial: its iterations, its episodes, and whether it was successful or not."""
 
     def write_header(self):
         """Write the header of the file."""
         super().write_header()
-        self._write_file("Iteration\tTrial\tIterations\tSuccess\n")
+        self._write_file(
+            "Iteration\tTrial\tIterations\tEpisodeCount\tSuccess\n"
+        )
 
     def write(self):
         """Write success."""
-        for iteration, trial, iterations, success in self.node.trials_data:
+        for iteration, trial, iteration_span, episode_count, success in self.node.trials_data:
             self._write_file(
                 str(iteration)
                 + "\t"
                 + str(trial)
                 + "\t"
-                + str(iterations)
+                + str(iteration_span)
+                + "\t"
+                + str(episode_count)
                 + "\t"
                 + str(success)
                 + "\n"
@@ -140,217 +180,344 @@ class FileTrialsSuccess(File):
             self.file_object.flush()
         self.node.trials_data = []
 
-class FilePNodesContent(File):
-    """A file that saves the contents of the P-nodes."""   
-    def __init__(self, ident, file_name, node, save_interval=100, **params):
+
+class FileFromTopics(File):
+    """
+    A file whose rows come from topic callbacks. Only the loop thread writes the files: the
+    callbacks just queue the rows, which the loop thread writes in write and close.
+    """
+
+    def __init__(self, ident, file_name, node, **params):
         super().__init__(ident, file_name, node, **params)
-        self.save_interval = save_interval
+        self.subscriptions = {}
+        self.pending_rows = deque()  # Rows received and not written yet (deque: thread safe appends and pops)
+
+    def queue_row(self, row):
+        """
+        Queues a row to be written by the loop thread. To be called from the callbacks.
+
+        :param row: The row, with its line ending.
+        :type row: str
+        """
+        self.pending_rows.append(row)
+
+    def write_pending_rows(self):
+        """Writes the queued rows, in the order they were received."""
+        while self.pending_rows:
+            self._write_file(self.pending_rows.popleft())
+
+    def write(self):
+        self.write_pending_rows()
+
+    def close(self):
+        """Writes the queued rows and closes the file. Rows received later are discarded."""
+        self.write_pending_rows()
+        super().close()
+
+
+class FilePNodesConfidence(FileFromTopics):
+    """A time series of P-Node rolling confidence and goal-link status."""
+
+    def write_header(self):
+        super().write_header()
+        self._write_file("Iteration\tPNode\tConfidence\tGoalLinked\n")
+
+    def write(self):
+        """
+        Writes the queued rows and subscribes to the success rate of new P-Nodes.
+        """
+        super().write()
+        pnodes = self.node.LTM_cache.get("PNode", {})
+        for pnode_name in pnodes:
+            if pnode_name not in self.subscriptions:
+                self.subscriptions[pnode_name] = self.node.create_subscription(
+                    SuccessRate,
+                    f"pnode/{pnode_name}/success_rate",
+                    self.success_rate_callback,
+                    1,
+                    callback_group=self.node.cbgroup_client,
+                )
+
+    def success_rate_callback(self, msg):
+        """
+        Queues a row with the confidence of a P-Node.
+
+        :param msg: The success rate.
+        :type msg: cognitive_node_interfaces.msg.SuccessRate
+        """
+        self.queue_row(
+            f"{self.node.iteration}\t{msg.node_name}\t"
+            f"{msg.success_rate:.6f}\t{int(msg.flag)}\n"
+        )
+
+
+class FileSubgoalEvents(File):
+    """Records newly created effectance subgoals with their graph context."""
+
+    def __init__(self, ident, file_name, node, **params):
+        super().__init__(ident, file_name, node, **params)
+        self.seen_goals = set()
+
+    def write_header(self):
+        super().write_header()
+        self._write_file("Iteration\tSubgoal\tPNode\tParentGoals\n")
+
+    @staticmethod
+    def _neighbors(goal_data, node_type):
+        return [
+            neighbor["name"]
+            for neighbor in goal_data.get("neighbors", [])
+            if neighbor.get("node_type") == node_type
+        ]
+
+    def write(self):
+        """
+        Writes a row for each new subgoal created by effectance (the goals whose name starts with reach_pnode\\_).
+        """
+        goals = self.node.LTM_cache.get("Goal", {})
+        for goal_name, goal_data in goals.items():
+            if not goal_name.startswith("reach_pnode_") or goal_name in self.seen_goals:
+                continue
+            pnodes = self._neighbors(goal_data, "PNode")
+            parent_goals = self._neighbors(goal_data, "Goal")
+            self._write_file(
+                f"{self.node.iteration}\t{goal_name}\t"
+                f"{'|'.join(pnodes)}\t{'|'.join(parent_goals)}\n"
+            )
+            self.seen_goals.add(goal_name)
+
+class FileSpaceContent(File):
+    """
+    Base class of the files that save the spaces of nodes.
+    """
+    def __init__(self, ident, file_name, node, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
+        super().__init__(ident, file_name, node, **params)
 
     def write_header(self):
         """Write the header of the file."""
         super().write_header()
         self.file_object.write("Iteration\tIdent\t")
         self.header_finished = False
-        self.created_clients = {}
 
-    def create_pnode_client(self, pnode_name):
+    def _write_spaces(self, service_prefix, names):
         """
-        Create client to request P-Node's space.
+        Requests the spaces of several nodes at once, with clients of the process node (own_client
+        and call_services), and writes them in the order of names.
 
-        :param pnode_name: Name of the P-Node.
-        :type pnode_name: str
+        :param service_prefix: Prefix of the send_space services (e.g. "pnode").
+        :type service_prefix: str
+        :param names: Names of the nodes.
+        :type names: list
         """
-        if pnode_name not in self.created_clients:
-            pnode_client = ServiceClient(SendSpace, 'pnode/' + str(pnode_name) + '/send_space')
-            self.created_clients[pnode_name] = pnode_client
+        calls = [(self.node.own_client(SendSpace, f"{service_prefix}/{name}/send_space"), SendSpace.Request()) for name in names]
+        for name, response in zip(names, self.node.call_services(calls)):
+            space = Container.from_msg(response.space)
+            if space:
+                self._write_space_content(space, ident=name)
+
+    def _write_space_content(self, space: Container, ident=""):
+        labels = space.feature_labels if space else []
+
+        if labels:
+            if not self.header_finished:
+                self.finish_header(labels)
+            
+            if labels == self.labels:
+                data = space.read()
+                samples = len(space)
+                for i in range(samples):
+                    self._write_file(str(self.node.iteration) + "\t")
+                    self._write_file(ident + "\t")
+                    for idx, label in enumerate(labels):
+                        ending = "\n" if idx == len(labels) - 1 else "\t"
+                        self._write_file(
+                            str(data.sel(features=label, sample=i).values) + ending
+                        )
+
+            else:
+                self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN SPACES\n")
 
     def finish_header(self, labels):
         """
-        Write P-Node dimensions in the header of the file.
+        Write space dimensions in the header of the file.
 
-        :param labels: Dimensions of the P-Node.
+        :param labels: Dimensions of the space.
         :type labels: list
         """
-        for label in labels:
-            self.file_object.write(f"{label}\t")
-        self.file_object.write("Confidence\n")
+        for idx, label in enumerate(labels):
+            ending = "\n" if idx == len(labels) - 1 else "\t"
+            self.file_object.write(f"{label}{ending}")
         self.header_finished = True
         self.labels = labels
 
+    def write_needed(self):
+        """
+        Check if writing is needed based on the save interval and current iteration.
+
+        :return: True if writing is needed, False otherwise.
+        :rtype: bool
+        """
+        return (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
+
+    
+
+class FilePNodesContent(FileSpaceContent):
+    """A file that saves the contents of the P-nodes every save_interval iterations."""   
+    def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between writes, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
+        super().__init__(ident, file_name, node, **params)
+        self.save_interval = save_interval
+
     def write(self):
-        """Writes P-Nodes contents."""    
-        write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)    
-        if "PNode" in self.node.LTM_cache and write_needed:
-            for pnode in self.node.LTM_cache["PNode"]:
-                if pnode not in self.created_clients:
-                    self.create_pnode_client(pnode)
+        """Writes P-Nodes contents. The spaces of all the P-Nodes are requested at once."""    
+        if "PNode" in self.node.LTM_cache and self.write_needed():
+            self._write_spaces("pnode", list(self.node.LTM_cache["PNode"]))
 
-                if self.created_clients[pnode]:
-                    response = self.created_clients[pnode].send_request()
 
-                    labels = response.labels
-
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
-
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iteration) + "\t")
-                                self._write_file(pnode + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN PNODES\n")
 
 class FileLastIterationPNodesContent(FilePNodesContent):
     """A file that saves the contents of the P-nodes at the end of an experiment."""
-    def write(self):
-        """Writes P-Nodes contents"""  
-        if "PNode" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
-            for pnode in self.node.LTM_cache["PNode"]:
-                self.create_pnode_client(pnode)
-
-                if self.created_clients[pnode]:
-                    response = self.created_clients[pnode].send_request()
-
-                    labels = response.labels
-
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
-
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iterations) + "\t")
-                                self._write_file(pnode + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN PNODES.\n")
+    
+    def write_needed(self):
+        """Check if writing is needed based on the current iteration.
+        Write is needed only if the current iteration is the last one.
+        """
+        return self.node.iteration == self.node.iterations
 
                     
         
-class FileGoalsContent(File):
-    """A file that saves the contents of the Goals at the end of an experiment."""
+class FileGoalsContent(FileSpaceContent):
+    """A file that saves the contents of the Goals every save_interval iterations."""
     def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between writes, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
         super().__init__(ident, file_name, node, **params)
         self.save_interval = save_interval
 
-    def write_header(self):
-        """Write the header of the file."""
-        super().write_header()
-        self.file_object.write("Iteration\tIdent\t")
-        self.header_finished = False
-        self.created_clients = {}
-
-    def create_goal_client(self, goal_name):
-        """
-        Create client to request Goal's space.
-
-        :param goal_name: Name of the Goal.
-        :type goal_name: str
-        """
-        if goal_name not in self.created_clients:
-            goal_client = ServiceClient(SendSpace, 'goal/' + str(goal_name) + '/send_space')
-            self.created_clients[goal_name] = goal_client
-
-    def finish_header(self, labels):
-        """
-        Write Goals dimensions in the header of the file.
-
-        :param labels: Dimensions of the Goal.
-        :type labels: list
-        """
-        for label in labels:
-            self.file_object.write(f"{label}\t")
-        self.file_object.write("Confidence\n")
-        self.header_finished = True
-        self.labels = labels
-
     def write(self):
-        """Writes Goals contents.""" 
-        if "Goal" in self.node.LTM_cache and self.node.iteration % self.save_interval == 0: #TODO Vary iterations
-            for goal in self.node.LTM_cache["Goal"]:
-                if goal not in self.created_clients:
-                    self.create_goal_client(goal)
-                if self.created_clients[goal]:
-                    response = self.created_clients[goal].send_request()
-                    self.node.get_logger().info(f"Writing data for goal {goal}. Points: {len(response.confidences)}")
-                    labels = response.labels
-
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
-
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iteration) + "\t")
-                                self._write_file(goal + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN GOALS\n")
+        """Writes Goals contents. The spaces of all the Goals are requested at once.""" 
+        if "Goal" in self.node.LTM_cache and self.write_needed():
+            self._write_spaces("goal", list(self.node.LTM_cache["Goal"]))
     
 
 class FileLastIterationGoalsContent(FileGoalsContent):
     """A file that saves the contents of the Goals at the end of an experiment."""
+
+    def write_needed(self):
+        """Check if writing is needed based on the current iteration.
+        Write is needed only if the current iteration is the last one.
+        """
+        return self.node.iteration == self.node.iterations
+
+
+
+class FileCNodesContent(File):
+    """A file that saves C-Node content from the LTM cache."""
+    def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the file.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between writes, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
+        super().__init__(ident, file_name, node, **params)
+        self.save_interval = save_interval
+
+    def write_header(self):
+        """Write the header of the file."""
+        super().write_header()
+        self.file_object.write("Iteration\tIdent\tWorldModel\tPNode\tGoal\tPolicy\tNeighbors\n")
+
+    def _neighbor_by_type(self, neighbors, node_type):
+        for neighbor in neighbors:
+            if neighbor.get("node_type") == node_type:
+                return neighbor.get("name", "")
+        return ""
+
+    def _write_cnodes(self, iteration_value):
+        for cnode, cnode_data in self.node.LTM_cache["CNode"].items():
+            neighbors = cnode_data.get("neighbors", [])
+            world_model = self._neighbor_by_type(neighbors, "WorldModel")
+            pnode = self._neighbor_by_type(neighbors, "PNode")
+            goal = self._neighbor_by_type(neighbors, "Goal")
+            policy = self._neighbor_by_type(neighbors, "Policy")
+            neighbor_names = [neighbor.get("name", "") for neighbor in neighbors]
+
+            self.file_object.write(
+                str(iteration_value)
+                + "\t"
+                + str(cnode)
+                + "\t"
+                + str(world_model)
+                + "\t"
+                + str(pnode)
+                + "\t"
+                + str(goal)
+                + "\t"
+                + str(policy)
+                + "\t"
+                + str(neighbor_names)
+                + "\n"
+            )
+
     def write(self):
-        """Writes Goals contents.""" 
-        if "Goal" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
-            for goal in self.node.LTM_cache["Goal"]:
-                self.create_goal_client(goal)
-                if self.created_clients[goal]:
-                    response = self.created_clients[goal].send_request()
-                    labels = response.labels
+        """Writes C-Nodes contents."""
+        write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
+        if "CNode" in self.node.LTM_cache and write_needed:
+            self._write_cnodes(self.node.iteration)
 
-                    if labels:
-                        if not self.header_finished:
-                            self.finish_header(labels)
-                        
-                        if labels == self.labels:
-                            data = response.data
-                            confidences = response.confidences
+class FileLastIterationCNodesContent(FileCNodesContent):
+    """A file that saves C-Node content at the end of an experiment."""
 
-                            j = 0
-                            for confidence in confidences:
-                                self._write_file(str(self.node.iterations) + "\t")
-                                self._write_file(goal + "\t")
-
-                                for i in range(j, len(labels)+j):
-                                    self._write_file(str(data[i]) + "\t")
-                                self._write_file(str(confidence) + "\n")
-                                j = j + len(labels)
-
-                        else:
-                            self._write_file("ERROR. LABELS DO NOT MATCH BETWEEN GOALS.\n")
-
-                    else:
-                        self.created_clients[goal] = None
+    def write(self):
+        """Writes C-Nodes contents."""
+        if "CNode" in self.node.LTM_cache and self.node.iteration == self.node.iterations:
+            self._write_cnodes(self.node.iterations)
 
 class FileNeighbors(File):
     """A file that saves the neighbors of each node (Method specific to track the subgoals created by effectance)."""    
@@ -358,12 +525,11 @@ class FileNeighbors(File):
         """Write the header of the file."""
         super().write_header()
         self._write_file("Goal\tNeighbor1\tNeighbor2\n")
-        self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
     
     def write(self):
         """Writes neighbors list."""        
         if self.node.iteration == self.node.iterations:
-            response = self.ltm_client.send_request(name="")
+            response = self.node.call_services([(self.node.own_client(GetNodeFromLTM, f'{self.node.LTM_id}/get_node'), GetNodeFromLTM.Request(name=""))])[0]
             nodes = yaml.safe_load(response.data)
             for goal in nodes['Goal']:
                 if 'reach' in goal or 'goal_' in goal:
@@ -375,47 +541,75 @@ class FileNeighbors(File):
                         self._write_file("\n")
 
 class FileNeighborsFull(File):
-    """A file that saves the full neighbor tree at the end of an experiment."""    
+    """A file that saves the full neighbor graph for all node types at the end of an experiment."""    
     def write_header(self):
         """Write the header of the file."""
         super().write_header()
-        self._write_file("Goal\tNeighbor1\tNeighbor2\n")
-        self.ltm_client = ServiceClient(GetNodeFromLTM, f'{self.node.LTM_id}/get_node')
+        self._write_file("NodeType\tNodeName\tNeighborName\tNeighborType\n")
     
     def write(self):
-        """Writes neighbors list for each node.""" 
+        """Writes one row per neighbor edge for every node type in the LTM.""" 
         if self.node.iteration == self.node.iterations:
-            response = self.ltm_client.send_request(name="")
+            response = self.node.call_services([(self.node.own_client(GetNodeFromLTM, f'{self.node.LTM_id}/get_node'), GetNodeFromLTM.Request(name=""))])[0]
             nodes = yaml.safe_load(response.data)
-            for goal in nodes['Goal']:
-                self._write_file(str(goal) + "\t")
-                self._write_file(str(nodes['Goal'][goal]["neighbors"]) + "\n")
+            for node_type, node_dict in nodes.items():
+                if not isinstance(node_dict, dict):
+                    continue
+                for node_name, node_data in node_dict.items():
+                    neighbors = node_data.get("neighbors", []) if isinstance(node_data, dict) else []
+                    if neighbors:
+                        for neighbor in neighbors:
+                            self._write_file(
+                                f"{node_type}\t{node_name}\t{neighbor['name']}\t{neighbor['node_type']}\n"
+                            )
+                    else:
+                        self._write_file(f"{node_type}\t{node_name}\t\t\n")
 
 class FileEpisodesDataset(File):
-    """A file that records the episodes published"""
-    def __init__(self, **kwargs):
+    """A file that records the published episodes. They are kept in an episodic buffer and written when the file is closed."""
+    def __init__(self, max_size=10000, **kwargs):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param max_size: Maximum number of episodes kept, defaults to 10000.
+        :type max_size: int
+        :param kwargs: Parameters of File.
+        :type kwargs: dict
+        """
         super().__init__(**kwargs)
-        self.episodic_buffer = EpisodicBuffer(self.node, main_size=None, secondary_size=0, inputs=["old_perception", "action",
+        self.episodic_buffer = EpisodicBuffer(self.node, main_size=max_size, secondary_size=0, inputs=["old_perception", "action",
                                                                                                     "parent_policy", 
-                                                                                                    "perception", "reward_list"])
+                                                                                                    "perception", "rewards"], flexible_labels=True)
         self.semaphore = threading.Semaphore()
 
     def write_episode(self, msg):
+        """
+        Adds an episode to the episodic buffer.
+
+        :param msg: The episode.
+        :type msg: core_interfaces.msg.Container
+        """
         self.semaphore.acquire()
-        episode = episode_msg_to_obj(msg)
+        episode = container_msg_to_episode(msg)
         self.node.get_logger().debug(f"Received episode to write: {episode}")
         self.episodic_buffer.add_episode(episode)
         self.node.get_logger().debug(f"Episodic buffer size: {self.episodic_buffer.main_size}")
         self.semaphore.release()
 
     def write(self):
+        """
+        It does nothing: the episodes are written when the file is closed.
+        """
         return None
     
     def close(self):
+        """
+        Writes the episodes of the buffer and closes the file.
+        """
         self.semaphore.acquire()    
         dataframe = self.episodic_buffer.get_dataframes()[0]
         if dataframe is not None:
-            dataframe.to_csv(self.file_object)
+            dataframe.to_csv(self.file_object, sep="\t")
         super().close()
         self.semaphore.release()
 
@@ -443,22 +637,21 @@ class FileDrivesPerceptions(File):
                     if "activation" in n_info and drive_tag == mission_tag:
                         n_activation = n_info["activation"]
                         list_drives[drive] = ["evaluation: ", d_activation/n_activation if n_activation != 0 else 0.0]
+        # Latest value of each feature of each perception, e.g. {"fruits": {"fruits:x": 0.5, ...}, ...}
         formatted = {}
         for key, value in self.node.perception_cache.items():
-            data_list = value.get("data", [])
-            if data_list:
-                clean_data = {
-                    k: v for k, v in data_list[0].items()
-                }
-                formatted[key] = clean_data
+            container = value.get("data")
+            if container is not None and len(container) > 0:
+                values, _ = container.read_numpy()
+                formatted[key] = {label: float(v) for label, v in zip(container.feature_labels, values[-1])}
         self.file_object.write(
             str(self.node.iteration)
             + "\t"
-            + self.node.current_world
+            + str(self.node.current_world)
             + "\t"
             + str(list_drives)
             + "\t"
-            + self.node.current_policy
+            + str(self.node.current_policy)
             + "\t"
             + str(formatted)
             + "\t"
@@ -466,11 +659,8 @@ class FileDrivesPerceptions(File):
         )
 
 
-class FileWorldModelSuccess(File):
+class FileWorldModelSuccess(FileFromTopics):
     """A file that records the success of the world model predictions."""
-    def __init__(self, ident, file_name, node, **params):
-        super().__init__(ident, file_name, node, **params)
-        self.subscriptions = {}
 
     def write_header(self):
         super().write_header()
@@ -479,6 +669,10 @@ class FileWorldModelSuccess(File):
         )
 
     def write(self):
+        """
+        Writes the queued rows and subscribes to the prediction error of new World Models.
+        """
+        super().write()
         # Check world model nodes in LTM cache
         world_models = self.node.LTM_cache.get("WorldModel", {})
         for wm_name in world_models:
@@ -492,7 +686,13 @@ class FileWorldModelSuccess(File):
                 )
 
     def success_rate_callback(self, msg):
-        self._write_file(
+        """
+        Queues a row with the prediction error of a World Model.
+
+        :param msg: The prediction error.
+        :type msg: cognitive_node_interfaces.msg.SuccessRate
+        """
+        self.queue_row(
             str(self.node.iteration)
             + "\t"
             + msg.node_name
@@ -503,11 +703,24 @@ class FileWorldModelSuccess(File):
 
 
 class FileSaveModels(File):
-    """A file that triggers the saving of models in nodes."""
+    """Not a data file: it creates a folder and triggers the saving of the models of the nodes in it."""
     def __init__(self, ident, file_name, node, save_interval=100, **params):
+        """
+        Init attributes when a new object is created (see File).
+
+        :param ident: Identifier of the file.
+        :type ident: str
+        :param file_name: Name of the output folder. A number is added to it.
+        :type file_name: str
+        :param node: The cognitive process that owns the file.
+        :type node: cognitive_processes.main_loop.MainLoop
+        :param save_interval: Number of iterations between saves, 0 to disable them, defaults to 100.
+        :type save_interval: int
+        :param params: Other parameters of the file.
+        :type params: dict
+        """
         super().__init__(ident, file_name, node, **params)
         self.folder_path = None
-        self.save_model_clients = {}
         self.save_interval = save_interval
         self.node_type_mapping = {
             "DeliberativeModel": "deliberative_model",
@@ -531,23 +744,27 @@ class FileSaveModels(File):
         self.file_object = folder_path_def
 
     def write(self):
-        # Trigger save models in all nodes in LTM cache
+        # Trigger save models in all nodes in LTM cache, all of them at once (each node saves its own model)
 
+        """
+        Asks the nodes with a model to save it, when it is time to do so.
+        """
         write_needed = (self.save_interval > 0 and self.node.iteration % self.save_interval == 0) or (self.node.iteration == self.node.iterations)
         if write_needed:
+            calls = []
             for node_type in self.node.LTM_cache:
                 if node_type in self.node_type_mapping:
                     service_prefix = self.node_type_mapping[node_type]
                     for node_name in self.node.LTM_cache[node_type]:
-                        if node_name not in self.save_model_clients:
-                            self.save_model_clients[node_name] = ServiceClient(
-                                SaveModel,
-                                f'{service_prefix}/{node_name}/save_model'
-                            )
-                        self.save_model_clients[node_name].send_request(prefix=f"{self.file_name}_{self.consecutive_index}/", suffix=f"_iter_{self.node.iteration}")
+                        calls.append((
+                            self.node.own_client(SaveModel, f'{service_prefix}/{node_name}/save_model'),
+                            SaveModel.Request(prefix=f"{self.file_name}_{self.consecutive_index}/", suffix=f"_iter_{self.node.iteration}"),
+                        ))
+            self.node.call_services(calls)
 
     def close(self):
+        """
+        It does nothing: there is no file to close.
+        """
         return None
-
-
 

@@ -7,7 +7,7 @@ package_name = 'core'
 setup(
     name=package_name,
     version='0.0.0',
-    packages=[package_name],
+    packages=[package_name, package_name + '.plotting'],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -26,7 +26,8 @@ setup(
         'console_scripts': [
             'commander = core.commander_node:main',
             'execution_node = core.execution_node:main',
-            'ltm = core.ltm:main'
+            'ltm = core.ltm:main',
+            'ltm_neighbors = core.ltm_neighbors:main'
         ],
     },
 )

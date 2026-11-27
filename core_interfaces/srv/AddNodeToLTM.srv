@@ -3,3 +3,6 @@ string node_type
 string data
 ---
 bool added
+# Neighbors assigned by the LTM (only when the node is registered without neighbors)
+string[] neighbors_name
+string[] neighbors_type
